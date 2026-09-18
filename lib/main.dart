@@ -27,6 +27,9 @@ ReceivePort? _serviceReceiverPort;
 ReceivePort? _messageReceiverPort;
 
 Future<void> main(List<String> args) async {
+  if (Platform.isWindows) {
+    setupPortableStorage();
+  }
   globalState.isService = false;
   WidgetsFlutterBinding.ensureInitialized();
 

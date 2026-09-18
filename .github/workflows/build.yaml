@@ -2,8 +2,11 @@ name: build
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - 'v*'
+  pull_request:
 
 env:
   IS_STABLE: ${{ !contains(github.ref, '-') }}
@@ -24,49 +27,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: android
-            os: ubuntu-24.04
-            arch: arm64
-          - platform: android
-            os: ubuntu-24.04
-            arch: amd64
-          - platform: android
-            os: ubuntu-24.04
-            arch: arm
-          - platform: android
-            os: ubuntu-24.04
-            arch: universal
-          - platform: windows
-            os: windows-2022
-            arch: amd64
-          - platform: windows
-            os: windows-11-arm
-            arch: arm64
-          - platform: windows
-            os: windows-2022
-            arch: amd64
-            compatible: true
-          - platform: macos
-            os: macos-15
-            arch: arm64
-          - platform: macos
-            os: macos-15
-            arch: amd64
-          - platform: macos
-            os: macos-15
-            arch: amd64
-            compatible: true
-          - platform: linux
-            os: ubuntu-22.04
-            arch: amd64
-          - platform: linux
-            os: ubuntu-24.04-arm
-            arch: arm64
-          - platform: linux
-            os: ubuntu-22.04
-            arch: amd64
-            compatible: true
+        # Release tags build every platform; ordinary pushes/PRs only build the
+        # Windows amd64 green (portable) package to keep CI fast.
+        include: ${{ startsWith(github.ref, 'refs/tags/v') && fromJson('[{"platform":"android","os":"ubuntu-24.04","arch":"arm64"},{"platform":"android","os":"ubuntu-24.04","arch":"amd64"},{"platform":"android","os":"ubuntu-24.04","arch":"arm"},{"platform":"android","os":"ubuntu-24.04","arch":"universal"},{"platform":"windows","os":"windows-2022","arch":"amd64"},{"platform":"windows","os":"windows-11-arm","arch":"arm64"},{"platform":"windows","os":"windows-2022","arch":"amd64","compatible":true},{"platform":"macos","os":"macos-15","arch":"arm64"},{"platform":"macos","os":"macos-15","arch":"amd64"},{"platform":"macos","os":"macos-15","arch":"amd64","compatible":true},{"platform":"linux","os":"ubuntu-22.04","arch":"amd64"},{"platform":"linux","os":"ubuntu-24.04-arm","arch":"arm64"},{"platform":"linux","os":"ubuntu-22.04","arch":"amd64","compatible":true}]') || fromJson('[{"platform":"windows","os":"windows-2022","arch":"amd64"}]') }}
 
     steps:
       - name: Checkout
@@ -325,6 +288,28 @@ jobs:
           
           flutter @flutterArgs
 
+      - name: Package Windows Portable (Green)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $buildDir = "build/windows/${{ matrix.arch == 'arm64' && 'arm64' || 'x64' }}/runner/Release"
+          if (-not (Test-Path $buildDir)) {
+            Write-Error "Release directory not found: $buildDir"
+            exit 1
+          }
+          $desc = if ('${{ matrix.compatible }}' -eq 'true') { "${{ matrix.arch }}-compatible" } else { "${{ matrix.arch }}" }
+          $version = [regex]::Match((Get-Content 'pubspec.yaml' -Raw), '(?m)^version:\s*([0-9]+\.[0-9]+\.[0-9]+)').Groups[1].Value
+          if (-not $version) {
+            Write-Error 'Could not read version from pubspec.yaml'
+            exit 1
+          }
+          New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
+          $out = "dist/Bettbox-$version-windows-$desc-portable.zip"
+          if (Test-Path $out) { Remove-Item $out -Force }
+          Write-Host "Packaging portable bundle -> $out"
+          Compress-Archive -Path (Join-Path $buildDir '*') -DestinationPath $out -CompressionLevel Optimal
+          Get-ChildItem 'dist'
+
       - name: Upload Unsigned Bettbox
         if: matrix.platform == 'windows' && env.SIGNPATH_API_TOKEN != ''
         id: upload-bettbox
@@ -351,6 +336,9 @@ jobs:
 
       - name: Package Windows Application
         if: matrix.platform == 'windows'
+        # On release tags the installer is mandatory; elsewhere a missing Inno
+        # Setup must not block the portable (green) artifact.
+        continue-on-error: ${{ !startsWith(github.ref, 'refs/tags/') }}
         shell: bash
         run: |
           dart windows/packaging/exe/package_windows.dart --arch ${{ matrix.arch }} ${{ matrix.compatible == true && '--compatible' || '' }} --env ${{ env.IS_STABLE == 'true' && 'stable' || 'pre' }}
@@ -466,6 +454,7 @@ jobs:
           overwrite: true
 
   upload:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions: write-all
     needs: [ build ]
     runs-on: ubuntu-latest
