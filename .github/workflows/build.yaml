@@ -422,13 +422,17 @@ jobs:
             fi
           fi
 
-      - name: Upload Artifacts (Non-Linux)
-        if: matrix.platform != 'linux'
+      - name: Upload Windows Green Artifact
+        if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v7
         with:
           name: Bettbox-${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.compatible == true && '-compatible' || '' }}
-          path: ./dist/*
+          # Only the portable (green) bundle is the deliverable. The Inno Setup
+          # installer in dist/ is skipped so this upload stays a single file and
+          # keeps working with archive: false (which rejects multiple files).
+          path: ./dist/*-portable.zip
           archive: false
+          if-no-files-found: error
           overwrite: true
 
       - name: Upload DEB Artifact
