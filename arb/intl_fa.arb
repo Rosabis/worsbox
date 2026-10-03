@@ -512,6 +512,7 @@
   "onlyIcon": "فقط آیکون",
   "noIcon": "بدون آیکون",
   "stackMode": "حالت پشته",
+  "congestionController": "کنترل ازدحام",
   "strictRoute": "مسیریابی سخت‌گیرانه",
   "strictRouteDesc": "استفاده از حالت مسیریابی سخت‌گیرانه TUN",
   "icmpForwarding": "هدایت ICMP",
@@ -669,6 +670,7 @@
   "openDashboard": "باز کردن Zashboard",
   "custom": "سفارشی",
   "customScriptOptions": "قوانین سفارشی",
+  "scriptOtherOptions": "تنظیمات دیگر",
   "wakelock": "قفل روشن ماندن صفحه",
   "wakelockDescription": "جلوگیری از خاموش شدن خودکار صفحه نمایش برای فعال ماندن برنامه‌ها در پس‌زمینه.",
   "tunEnableRequireAdmin": "استفاده از حالت TUN نیازمند دسترسی Admin یا ROOT است",
@@ -740,6 +742,7 @@
   "mediaUnlockDetails": "جزئیات تست اتصال",
   "mediaUnlockDisplaySettings": "تنظیمات نمایش",
   "mediaUnlockMiscSettings": "تنظیمات متفرقه",
+  "mediaUnlockMoreStreamingPlatforms": "موارد بیشتر آنلاک استریم",
   "mediaUnlockExtraDetails": "نمایش جزئیات بیشتر IP",
   "mediaUnlockRefreshOnNodeChange": "به‌روزرسانی خودکار هنگام تغییر گره",
   "mediaUnlockColorfulIcons": "نمایش آیکون‌های رنگی به‌صورت پیش‌فرض",
@@ -779,6 +782,18 @@
   "addUser": "افزودن کاربر",
   "editUser": "ویرایش کاربر",
   "userAuthEmpty": "کاربری برای احراز هویت تنظیم نشده، اتصال شبکه محلی نیازی به مشخصات ندارد",
-  "usernameCannotContainColon": "نام کاربری نباید شامل دونقطه (:) باشد"
+  "usernameCannotContainColon": "نام کاربری نباید شامل دونقطه (:) باشد",
+  "intranetAndGateway": "شبکه محلی و گیت‌وی",
+  "networkType": "نوع شبکه",
+  "defaultGateway": "گیت‌وی",
+  "lanSharing": "اشتراک‌گذاری در شبکه محلی",
+  "sharedAddress": "آدرس اشتراکی",
+  "dnsResolution": "تفکیک DNS",
+  "systemDns": "DNS",
+  "enabled": "فعال",
+  "disabled": "غیرفعال",
+  "openRouterAdmin": "باز کردن گیت‌وی"
 }
+
+
 
