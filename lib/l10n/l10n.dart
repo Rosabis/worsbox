@@ -1,6 +1,7 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import 'intl/messages_all.dart';
 
 // **************************************************************************
@@ -74,10 +75,10 @@ class AppLocalizations {
     return Intl.message('Home', name: 'dashboard', desc: '', args: []);
   }
 
-  /// `Custom Dashboard Title`
+  /// `Custom Title`
   String get customDashboardTitle {
     return Intl.message(
-      'Custom Dashboard Title',
+      'Custom Title',
       name: 'customDashboardTitle',
       desc: '',
       args: [],
@@ -229,6 +230,16 @@ class AppLocalizations {
     return Intl.message(
       'Outbound Mode',
       name: 'outboundMode',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Running Mode`
+  String get runningMode {
+    return Intl.message(
+      'Running Mode',
+      name: 'runningMode',
       desc: '',
       args: [],
     );
@@ -794,10 +805,10 @@ class AppLocalizations {
     return Intl.message('Theme', name: 'theme', desc: '', args: []);
   }
 
-  /// `Set theme color and icon`
+  /// `Set theme color options`
   String get themeDesc {
     return Intl.message(
-      'Set theme color and icon',
+      'Set theme color options',
       name: 'themeDesc',
       desc: '',
       args: [],
@@ -1644,6 +1655,11 @@ class AppLocalizations {
     return Intl.message('Log Level', name: 'logLevel', desc: '', args: []);
   }
 
+  /// `AI Search`
+  String get logAiSearch {
+    return Intl.message('AI Search', name: 'logAiSearch', desc: '', args: []);
+  }
+
   /// `Show`
   String get show {
     return Intl.message('Show', name: 'show', desc: '', args: []);
@@ -1694,10 +1710,120 @@ class AppLocalizations {
     );
   }
 
-  /// `Bettbox is based on the powerful and flexible Mihomo (Clash.Meta) proxy kernel, dedicated to a superior user experience. Our vision: Connecting Open Source and AI, Accelerating Innovation`
+  /// `Style`
+  String get startSwitchStyle {
+    return Intl.message('Style', name: 'startSwitchStyle', desc: '', args: []);
+  }
+
+  /// `Tonal`
+  String get startSwitchTonal {
+    return Intl.message('Tonal', name: 'startSwitchTonal', desc: '', args: []);
+  }
+
+  /// `Outlined`
+  String get startSwitchOutlined {
+    return Intl.message(
+      'Outlined',
+      name: 'startSwitchOutlined',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Personalized Display`
+  String get startSwitchPersonalized {
+    return Intl.message(
+      'Personalized Display',
+      name: 'startSwitchPersonalized',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Text when on`
+  String get startSwitchOnLabel {
+    return Intl.message(
+      'Text when on',
+      name: 'startSwitchOnLabel',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Text when off`
+  String get startSwitchOffLabel {
+    return Intl.message(
+      'Text when off',
+      name: 'startSwitchOffLabel',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Hover Panel`
+  String get sidebarFlyout {
+    return Intl.message(
+      'Hover Panel',
+      name: 'sidebarFlyout',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Show the sidebar settings hover card`
+  String get sidebarFlyoutDesc {
+    return Intl.message(
+      'Show the sidebar settings hover card',
+      name: 'sidebarFlyoutDesc',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Only show outside the “Tools” page`
+  String get sidebarFlyoutOutsideTools {
+    return Intl.message(
+      'Only show outside the “Tools” page',
+      name: 'sidebarFlyoutOutsideTools',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Trigger Delay`
+  String get sidebarFlyoutDelay {
+    return Intl.message(
+      'Trigger Delay',
+      name: 'sidebarFlyoutDelay',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Entries`
+  String get sidebarFlyoutEntries {
+    return Intl.message(
+      'Entries',
+      name: 'sidebarFlyoutEntries',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Fast`
+  String get fast {
+    return Intl.message('Fast', name: 'fast', desc: '', args: []);
+  }
+
+  /// `Slow`
+  String get slow {
+    return Intl.message('Slow', name: 'slow', desc: '', args: []);
+  }
+
+  /// `Bettbox is deeply crafted on the powerful and flexible Mihomo kernel, dedicated to a superior client experience. Our vision: Connecting Open Source and AI, Accelerating Innovation`
   String get desc {
     return Intl.message(
-      'Bettbox is based on the powerful and flexible Mihomo (Clash.Meta) proxy kernel, dedicated to a superior user experience. Our vision: Connecting Open Source and AI, Accelerating Innovation',
+      'Bettbox is deeply crafted on the powerful and flexible Mihomo kernel, dedicated to a superior client experience. Our vision: Connecting Open Source and AI, Accelerating Innovation',
       name: 'desc',
       desc: '',
       args: [],
@@ -2184,9 +2310,9 @@ class AppLocalizations {
     );
   }
 
-  /// `Requests`
+  /// `Recent`
   String get requests {
-    return Intl.message('Requests', name: 'requests', desc: '', args: []);
+    return Intl.message('Recent', name: 'requests', desc: '', args: []);
   }
 
   /// `View recent request logs`
@@ -2394,6 +2520,16 @@ class AppLocalizations {
     return Intl.message(
       'Customize animation during delay testing',
       name: 'delayAnimationDesc',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Sync animation to other pages`
+  String get syncDelayAnimation {
+    return Intl.message(
+      'Sync animation to other pages',
+      name: 'syncDelayAnimation',
       desc: '',
       args: [],
     );
@@ -2704,6 +2840,36 @@ class AppLocalizations {
     return Intl.message(
       'Close connections when switching nodes',
       name: 'autoCloseConnectionsDesc',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Related Settings`
+  String get relatedSettings {
+    return Intl.message(
+      'Related Settings',
+      name: 'relatedSettings',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Clear DNS Cache`
+  String get flushDnsOnNetworkChange {
+    return Intl.message(
+      'Clear DNS Cache',
+      name: 'flushDnsOnNetworkChange',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Clear the DNS cache when the network changes`
+  String get flushDnsOnNetworkChangeDesc {
+    return Intl.message(
+      'Clear the DNS cache when the network changes',
+      name: 'flushDnsOnNetworkChangeDesc',
       desc: '',
       args: [],
     );
@@ -4064,14 +4230,9 @@ class AppLocalizations {
     return Intl.message('IP/CIDR', name: 'ipcidr', desc: '', args: []);
   }
 
-  /// `Organization / Domain`
+  /// `Domain`
   String get domain {
-    return Intl.message(
-      'Organization / Domain',
-      name: 'domain',
-      desc: '',
-      args: [],
-    );
+    return Intl.message('Domain', name: 'domain', desc: '', args: []);
   }
 
   /// `Reset`
@@ -4404,6 +4565,26 @@ class AppLocalizations {
     return Intl.message(
       'Customize proxy group ICON icons',
       name: 'iconConfigurationDesc',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Reset Icon Cache`
+  String get resetIconCache {
+    return Intl.message(
+      'Reset Icon Cache',
+      name: 'resetIconCache',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Reset the local icon cache? This is safe, the app will fetch icons from their remote links again automatically.`
+  String get resetIconCacheDesc {
+    return Intl.message(
+      'Reset the local icon cache? This is safe, the app will fetch icons from their remote links again automatically.',
+      name: 'resetIconCacheDesc',
       desc: '',
       args: [],
     );
@@ -4834,10 +5015,10 @@ class AppLocalizations {
     );
   }
 
-  /// `Animation Feedback`
+  /// `Motion Feedback`
   String get navBarHapticFeedback {
     return Intl.message(
-      'Animation Feedback',
+      'Motion Feedback',
       name: 'navBarHapticFeedback',
       desc: '',
       args: [],
@@ -5224,16 +5405,6 @@ class AppLocalizations {
     return Intl.message(
       'Please enter a script name',
       name: 'pleaseEnterScriptName',
-      desc: '',
-      args: [],
-    );
-  }
-
-  /// `Inactive in script mode`
-  String get overrideInvalidTip {
-    return Intl.message(
-      'Inactive in script mode',
-      name: 'overrideInvalidTip',
       desc: '',
       args: [],
     );
@@ -5854,6 +6025,16 @@ class AppLocalizations {
     return Intl.message('Continent', name: 'continent', desc: '', args: []);
   }
 
+  /// `Organization / Domain`
+  String get organizationDomain {
+    return Intl.message(
+      'Organization / Domain',
+      name: 'organizationDomain',
+      desc: '',
+      args: [],
+    );
+  }
+
   /// `Copied to clipboard`
   String get copiedToClipboard {
     return Intl.message(
@@ -6114,20 +6295,20 @@ class AppLocalizations {
     );
   }
 
-  /// `Select up to 4 items to pin on the widget`
+  /// `Select up to 3 items to pin on the widget`
   String get mediaUnlockPinnedSettingsDesc {
     return Intl.message(
-      'Select up to 4 items to pin on the widget',
+      'Select up to 3 items to pin on the widget',
       name: 'mediaUnlockPinnedSettingsDesc',
       desc: '',
       args: [],
     );
   }
 
-  /// `You can select up to 4 items`
+  /// `You can select up to 3 items`
   String get mediaUnlockSelectLimit {
     return Intl.message(
-      'You can select up to 4 items',
+      'You can select up to 3 items',
       name: 'mediaUnlockSelectLimit',
       desc: '',
       args: [],
@@ -6459,6 +6640,131 @@ class AppLocalizations {
     return Intl.message(
       'Open Gateway',
       name: 'openRouterAdmin',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `{count} new logs`
+  String newLogsCount(Object count) {
+    return Intl.message(
+      '$count new logs',
+      name: 'newLogsCount',
+      desc: '',
+      args: [count],
+    );
+  }
+
+  /// `No matching logs`
+  String get noMatchedLogs {
+    return Intl.message(
+      'No matching logs',
+      name: 'noMatchedLogs',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Clear filters`
+  String get clearFilter {
+    return Intl.message(
+      'Clear filters',
+      name: 'clearFilter',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Only {label}`
+  String onlyShow(Object label) {
+    return Intl.message(
+      'Only $label',
+      name: 'onlyShow',
+      desc: '',
+      args: [label],
+    );
+  }
+
+  /// `{level} mode is for network debugging; turn it off for daily use`
+  String logLevelDebugHint(Object level) {
+    return Intl.message(
+      '$level mode is for network debugging; turn it off for daily use',
+      name: 'logLevelDebugHint',
+      desc: '',
+      args: [level],
+    );
+  }
+
+  /// `Collapse`
+  String get collapse {
+    return Intl.message('Collapse', name: 'collapse', desc: '', args: []);
+  }
+
+  /// `Analyze Bettbox (Mihomo) log: {log}`
+  String analyzeLogPrompt(Object log) {
+    return Intl.message(
+      'Analyze Bettbox (Mihomo) log: $log',
+      name: 'analyzeLogPrompt',
+      desc: '',
+      args: [log],
+    );
+  }
+
+  /// `GEO Built-in Resources`
+  String get geoBuiltInResources {
+    return Intl.message(
+      'GEO Built-in Resources',
+      name: 'geoBuiltInResources',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `setcap is not installed, falling back to setuid`
+  String get setcapNotInstalledFallback {
+    return Intl.message(
+      'setcap is not installed, falling back to setuid',
+      name: 'setcapNotInstalledFallback',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `The filesystem does not support file capabilities, falling back to setuid`
+  String get xattrUnsupportedFallback {
+    return Intl.message(
+      'The filesystem does not support file capabilities, falling back to setuid',
+      name: 'xattrUnsupportedFallback',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Could not grant file capabilities, falling back to setuid`
+  String get setcapFailedFallback {
+    return Intl.message(
+      'Could not grant file capabilities, falling back to setuid',
+      name: 'setcapFailedFallback',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `The core is on a filesystem mounted with nosuid, so file capabilities and setuid cannot take effect`
+  String get coreMountNosuid {
+    return Intl.message(
+      'The core is on a filesystem mounted with nosuid, so file capabilities and setuid cannot take effect',
+      name: 'coreMountNosuid',
+      desc: '',
+      args: [],
+    );
+  }
+
+  /// `Core authorization did not take effect: the running core lacks CAP_NET_ADMIN, TUN may fail`
+  String get coreCapabilityNotEffective {
+    return Intl.message(
+      'Core authorization did not take effect: the running core lacks CAP_NET_ADMIN, TUN may fail',
+      name: 'coreCapabilityNotEffective',
       desc: '',
       args: [],
     );

@@ -4,7 +4,7 @@ import 'package:bett_box/models/models.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
 import 'package:bett_box/widgets/widgets.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:bett_box/views/profiles/add_profile.dart';
@@ -32,7 +32,7 @@ class _StartButtonState extends ConsumerState<StartButton> {
     try {
       await globalState.appController.updateStatus(newState);
     } catch (e) {
-      commonPrint.log('updateStatus failed: $e');
+      commonPrint.error('updateStatus failed: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -80,9 +80,7 @@ class _StartButtonState extends ConsumerState<StartButton> {
       builder: (_, type) {
         return AdaptiveSheetScaffold(
           type: type,
-          body: AddProfileView(
-            context: context,
-          ),
+          body: AddProfileView(context: context),
           title: appLocalizations.add,
         );
       },
@@ -98,13 +96,11 @@ class _StartButtonState extends ConsumerState<StartButton> {
     final hasNoProfile =
         state.isInit && !state.hasProfile && !_isDisabled && !isSmartStopped;
     final isRestarting = ref.watch(isRestartingCoreProvider);
-    final isStart =
-        ref.watch(runTimeProvider.select((time) => time != null));
-    final displayStart =
-        isSmartStopped ? false : (_optimisticStart ?? isStart);
+    final isStart = ref.watch(runTimeProvider.select((time) => time != null));
+    final displayStart = isSmartStopped ? false : (_optimisticStart ?? isStart);
 
     return SizedBox(
-      height: getWidgetHeight(1),
+      height: getWidgetHeight(context, 1),
       child: CommonCard(
         info: Info(
           label: isSmartStopped
@@ -119,8 +115,8 @@ class _StartButtonState extends ConsumerState<StartButton> {
         onPressed: canPress
             ? _handleStart
             : hasNoProfile
-                ? _handleShowAddProfile
-                : null,
+            ? _handleShowAddProfile
+            : null,
         onLongPress: canPress ? _handleLongPress : null,
         child: Container(
           padding: baseInfoEdgeInsets.copyWith(top: 0),
@@ -171,9 +167,9 @@ class _StartButtonState extends ConsumerState<StartButton> {
           Expanded(
             child: Text(
               'Suspended',
-              style: context.textTheme.bodyMedium?.copyWith(
-                color: context.colorScheme.outline,
-              ).adjustSize(1),
+              style: context.textTheme.bodyMedium
+                  ?.copyWith(color: context.colorScheme.outline)
+                  .adjustSize(1),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

@@ -2,7 +2,7 @@ import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/state.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'scaffold.dart';
 import 'side_sheet.dart';
@@ -115,9 +115,9 @@ class AdaptiveSheetScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottomSheet = type == SheetType.bottomSheet;
     final sideSheet = type == SheetType.sideSheet;
-    final backgroundColor = bottomSheet
-        ? context.colorScheme.surfaceContainerHigh
-        : (sideSheet ? context.colorScheme.surfaceContainer : null);
+    final backgroundColor = (bottomSheet || sideSheet)
+        ? context.colorScheme.surfaceContainerLow
+        : null;
     final appBar = AppBar(
       forceMaterialTransparency: bottomSheet,
       automaticallyImplyLeading: bottomSheet
@@ -139,9 +139,11 @@ class AdaptiveSheetScaffold extends StatelessWidget {
     final content = bottomSheet
         ? Container(
             clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: backgroundColor,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28.0)),
+              shape: const RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28.0)),
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
