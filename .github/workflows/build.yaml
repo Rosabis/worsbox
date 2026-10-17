@@ -169,7 +169,7 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           flutter pub get
-          dart run build_runner build
+          dart run build_runner build -d
           dart setup.dart ${{ matrix.platform }} --arch ${{ matrix.arch }} ${{ env.IS_STABLE == 'true' && '--env stable' || '' }} ${{ matrix.compatible == true && '--compatible' || '' }}
 
       - name: Install SignPath (Windows)
@@ -213,7 +213,7 @@ jobs:
         shell: bash
         run: |
           flutter pub get
-          dart run build_runner build
+          dart run build_runner build -d
           dart setup.dart windows --arch ${{ matrix.arch }} --out core-only ${{ matrix.compatible == true && '--compatible' || '' }}
 
       - name: Upload Unsigned Core
