@@ -92,12 +92,14 @@ class OptionsDelegate<T> extends Delegate {
   final String title;
   final T value;
   final String Function(T value) textBuilder;
+  final String Function(T value)? subtitleBuilder;
   final Function(T? value) onChanged;
 
   const OptionsDelegate({
     required this.title,
     required this.options,
     required this.textBuilder,
+    this.subtitleBuilder,
     required this.value,
     required this.onChanged,
   });
@@ -393,11 +395,13 @@ class ListItem<T> extends StatelessWidget {
       return _buildListTile(
         context,
         onTap: () async {
-          final value = await globalState.showCommonDialog<T>(
+          final value = await globalState.showAdaptiveSheet<T>(
+            nested: isInBottomSheet(context),
             child: OptionsDialog<T>(
               title: optionsDelegate.title,
               options: optionsDelegate.options,
               textBuilder: optionsDelegate.textBuilder,
+              subtitleBuilder: optionsDelegate.subtitleBuilder,
               value: optionsDelegate.value,
             ),
           );
@@ -606,6 +610,27 @@ class SectionContainer extends StatelessWidget {
     final cleanItems = items.where((widget) => widget is! Divider).toList();
     if (cleanItems.isEmpty) return const SizedBox.shrink();
 
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < cleanItems.length; i++) ...[
+          cleanItems[i],
+          if (i != cleanItems.length - 1)
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: context.colorScheme.outlineVariant.withValues(
+                alpha: context.colorScheme.brightness == Brightness.light
+                    ? 0.45
+                    : 0.25,
+              ),
+              indent: 16,
+              endIndent: 16,
+            ),
+        ],
+      ],
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -614,30 +639,7 @@ class SectionContainer extends StatelessWidget {
           ListHeader(title: title!, actions: actions, padding: headerPadding),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-          child: CommonCard(
-            type: CommonCardType.filled,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var i = 0; i < cleanItems.length; i++) ...[
-                  cleanItems[i],
-                  if (i != cleanItems.length - 1)
-                    Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: context.colorScheme.outlineVariant.withValues(
-                        alpha:
-                            context.colorScheme.brightness == Brightness.light
-                            ? 0.45
-                            : 0.25,
-                      ),
-                      indent: 16,
-                      endIndent: 16,
-                    ),
-                ],
-              ],
-            ),
-          ),
+          child: CommonCard(type: CommonCardType.filled, child: content),
         ),
       ],
     );
@@ -848,13 +850,13 @@ class _RenderContinuousItemFrame extends RenderShiftedBox {
     }
     final rrect = _borderRadius.toRRect(frame);
     context.canvas.drawRRect(rrect.shift(offset), paint);
-    layer = context.pushClipPath(
+    layer = context.pushClipRRect(
       needsCompositing,
       offset,
       frame,
-      Path()..addRRect(rrect),
+      rrect,
       _paintContent,
-      oldLayer: layer as ClipPathLayer?,
+      oldLayer: layer as ClipRRectLayer?,
     );
   }
 }
@@ -913,7 +915,7 @@ List<Widget> generateInfoSection({
   ];
 }
 
-Widget generateListView(List<Widget> items) {
+Widget generateListView(List<Widget> items, {bool shrinkWrap = false}) {
   return ScrollEdgeRise(
     builder: (context, rise) {
       final bottomPadding = MediaQuery.paddingOf(context).bottom;
@@ -922,6 +924,7 @@ Widget generateListView(List<Widget> items) {
       if (cleanItems.isEmpty) return const SizedBox.shrink();
 
       return ListView.builder(
+        shrinkWrap: shrinkWrap,
         padding: EdgeInsets.only(bottom: 24 + bottomPadding, top: 8 + rise),
         itemCount: cleanItems.length,
         itemBuilder: (context, index) {

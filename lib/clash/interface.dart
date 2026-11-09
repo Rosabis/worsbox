@@ -16,7 +16,7 @@ mixin ClashInterface {
 
   Future<bool> get isInit;
 
-  Future<bool> forceGc({bool forceFreeOSMemory = false});
+  Future<bool> forceGc({bool forceFreeOSMemory = false, bool purge = true});
 
   FutureOr<String> validateConfig(
     String data, {
@@ -24,13 +24,19 @@ mixin ClashInterface {
     SetupParams? setup,
   });
 
+  Future<String> importProfile(String params);
+
   Future<Result> getRuntimeConfig(SetupParams setupParams);
 
   Future<Result> exportConfig(
     String path,
     String output, {
     String? ageSecretKey,
+    String? providersPath,
+    bool refresh,
   });
+
+  Future<Result> mergeProfiles(String params);
 
   FutureOr<String> decryptAgeConfig(String data, String ageSecretKey);
 
@@ -38,13 +44,18 @@ mixin ClashInterface {
     String path, {
     String? ageSecretKey,
     List<String> disabledGroups,
+    bool snippet,
   });
 
-  Future<Map<String, String>> generateAgeKeyPair();
+  Future<Map<String, String>> generateAgeKeyPair({bool hybrid = false});
 
   Future<Result<String>> convertAgeSecretKeyToPublicKey(String secretKey);
 
   Future<String> asyncTestDelay(String url, String proxyName);
+
+  Future<String> asyncTestDelays(String params, Duration timeout);
+
+  Future<bool> setForeground(bool value);
 
   FutureOr<String> updateConfig(UpdateParams updateParams);
 
@@ -75,13 +86,39 @@ mixin ClashInterface {
 
   FutureOr<String> getTraffic();
 
-  FutureOr<String> getTotalTraffic();
+  FutureOr<String> getTrafficSnapshot();
 
   FutureOr<String> getCountryCode(String ip);
 
   FutureOr<String> getMemory();
 
   FutureOr<String> getCoreStatus();
+
+  Future<String> startSpeedTest(String params);
+
+  FutureOr<bool> cancelSpeedTest();
+
+  Future<String> probeSpeedTest(String params);
+
+  Future<String> getSpeedTestServers(String params);
+
+  Future<String> startStunTest(String params);
+
+  FutureOr<bool> cancelStunTest();
+
+  Future<String> startIperfServer(String params);
+
+  FutureOr<bool> stopIperfServer();
+
+  Future<String> startIperfClient(String params, Duration timeout);
+
+  FutureOr<bool> cancelIperfClient();
+
+  Future<String> startLocalPing(String params, Duration timeout);
+
+  FutureOr<bool> cancelLocalPing();
+
+  Future<String> toolboxInvoke(ActionMethod method, {String data = ''});
 
   FutureOr<void> resetTraffic();
 
@@ -97,9 +134,13 @@ mixin ClashInterface {
 
   FutureOr<String> getConnections();
 
+  FutureOr<String> getConnectionsSummary();
+
   FutureOr<bool> closeConnection(String id);
 
   FutureOr<bool> closeConnections();
+
+  FutureOr<bool> closeGroupConnections(String groupName);
 
   FutureOr<bool> resetConnections();
 
@@ -134,6 +175,32 @@ class CoreDisconnectedException implements Exception {
   const CoreDisconnectedException();
 }
 
+const _isolateDecodeThreshold = 64 * 1024;
+
+({Map<String, Object?> header, String payload})? _splitActionResult(
+  String message,
+) {
+  final index = message.indexOf('\n');
+  if (index == -1) return null;
+  final header = json.decode(message.substring(0, index));
+  if (header is! Map<String, Object?>) return null;
+  return (header: header, payload: message.substring(index + 1));
+}
+
+ActionResult _toActionResult(Map<String, Object?> header, Object? data) {
+  return ActionResult.fromJson({...header, 'data': data});
+}
+
+ActionResult? decodeActionResult(String message) {
+  final parts = _splitActionResult(message);
+  if (parts == null) return null;
+  final (:header, :payload) = parts;
+  return _toActionResult(
+    header,
+    header['raw'] == true ? payload : json.decode(payload),
+  );
+}
+
 abstract class ClashHandlerInterface with ClashInterface {
   Map<String, Completer> callbackCompleterMap = {};
   final Map<String, Object> _requestChannels = {};
@@ -150,6 +217,7 @@ abstract class ClashHandlerInterface with ClashInterface {
         case ActionMethod.getConfig:
         case ActionMethod.getRuntimeConfig:
         case ActionMethod.exportConfig:
+        case ActionMethod.mergeProfiles:
         case ActionMethod.convertAgeSecretKeyToPublicKey:
           completer?.complete(result.toResult);
           return;
@@ -157,11 +225,36 @@ abstract class ClashHandlerInterface with ClashInterface {
           completer?.complete(result.data);
           return;
         default:
-          completer?.complete(result.data);
+          final data = result.data;
+          completer?.complete(
+            completer is Completer<String> && data is! String
+                ? json.encode(data)
+                : data,
+          );
           return;
       }
     } catch (e) {
       commonPrint.warn('${result.id} error $e');
+    }
+  }
+
+  Future<void> handleResultMessage(String message) async {
+    try {
+      final parts = _splitActionResult(message);
+      if (parts == null) {
+        commonPrint.warn('Ignored malformed core result');
+        return;
+      }
+      final (:header, :payload) = parts;
+      final data = header['raw'] == true
+          ? payload
+          : payload.length >= _isolateDecodeThreshold &&
+                header['method'] != ActionMethod.message.name
+          ? await Isolate.run(() => json.decode(payload))
+          : json.decode(payload);
+      await handleResult(_toActionResult(header, data));
+    } catch (e) {
+      commonPrint.warn('Failed to decode core result: $e');
     }
   }
 
@@ -276,10 +369,10 @@ abstract class ClashHandlerInterface with ClashInterface {
   }
 
   @override
-  Future<bool> forceGc({bool forceFreeOSMemory = false}) {
+  Future<bool> forceGc({bool forceFreeOSMemory = false, bool purge = true}) {
     return invoke<bool>(
       method: ActionMethod.forceGc,
-      data: forceFreeOSMemory ? 'true' : 'false',
+      data: forceFreeOSMemory ? (purge ? 'true' : 'free') : 'false',
     );
   }
 
@@ -301,6 +394,16 @@ abstract class ClashHandlerInterface with ClashInterface {
   }
 
   @override
+  Future<String> importProfile(String params) {
+    return invoke<String>(
+      method: ActionMethod.importProfile,
+      data: params,
+      timeout: const Duration(minutes: 3),
+      onTimeout: () => throw TimeoutException('importProfile timeout'),
+    );
+  }
+
+  @override
   Future<Result> getRuntimeConfig(SetupParams setupParams) {
     return invoke<Result>(
       method: ActionMethod.getRuntimeConfig,
@@ -315,6 +418,8 @@ abstract class ClashHandlerInterface with ClashInterface {
     String path,
     String output, {
     String? ageSecretKey,
+    String? providersPath,
+    bool refresh = false,
   }) {
     return invoke<Result>(
       method: ActionMethod.exportConfig,
@@ -322,9 +427,22 @@ abstract class ClashHandlerInterface with ClashInterface {
         'path': path,
         'age-secret-key': ageSecretKey ?? '',
         'output': output,
+        'expand-providers': providersPath != null,
+        'providers-path': providersPath ?? '',
+        'refresh': refresh,
       }),
       timeout: const Duration(seconds: 60),
       defaultValue: Result.error('exportConfig timeout'),
+    );
+  }
+
+  @override
+  Future<Result> mergeProfiles(String params) {
+    return invoke<Result>(
+      method: ActionMethod.mergeProfiles,
+      data: params,
+      timeout: const Duration(seconds: 120),
+      defaultValue: Result.error('mergeProfiles timeout'),
     );
   }
 
@@ -351,11 +469,13 @@ abstract class ClashHandlerInterface with ClashInterface {
     String path, {
     String? ageSecretKey,
     List<String> disabledGroups = const [],
+    bool snippet = false,
   }) async {
     final params = {
       'path': path,
       'age-secret-key': ageSecretKey ?? '',
       'disabled-groups': disabledGroups,
+      'snippet': snippet,
     };
     final res = await invoke<Result>(
       method: ActionMethod.getConfig,
@@ -455,8 +575,21 @@ abstract class ClashHandlerInterface with ClashInterface {
   }
 
   @override
+  FutureOr<String> getConnectionsSummary() {
+    return invoke<String>(method: ActionMethod.getConnectionsSummary);
+  }
+
+  @override
   Future<bool> closeConnections() {
     return invoke<bool>(method: ActionMethod.closeConnections);
+  }
+
+  @override
+  Future<bool> closeGroupConnections(String groupName) {
+    return invoke<bool>(
+      method: ActionMethod.closeGroupConnections,
+      data: groupName,
+    );
   }
 
   @override
@@ -470,8 +603,8 @@ abstract class ClashHandlerInterface with ClashInterface {
   }
 
   @override
-  FutureOr<String> getTotalTraffic() {
-    return invoke<String>(method: ActionMethod.getTotalTraffic);
+  FutureOr<String> getTrafficSnapshot() {
+    return invoke<String>(method: ActionMethod.getTrafficSnapshot);
   }
 
   @override
@@ -552,6 +685,23 @@ abstract class ClashHandlerInterface with ClashInterface {
   }
 
   @override
+  Future<String> asyncTestDelays(String params, Duration timeout) {
+    return invoke<String>(
+      method: ActionMethod.asyncTestDelays,
+      data: params,
+      timeout: timeout,
+    );
+  }
+
+  @override
+  Future<bool> setForeground(bool value) {
+    return invoke<bool>(
+      method: ActionMethod.setForeground,
+      data: value ? 'true' : 'false',
+    );
+  }
+
+  @override
   FutureOr<String> getCountryCode(String ip) {
     return invoke<String>(method: ActionMethod.getCountryCode, data: ip);
   }
@@ -564,6 +714,106 @@ abstract class ClashHandlerInterface with ClashInterface {
   @override
   FutureOr<String> getCoreStatus() {
     return invoke<String>(method: ActionMethod.getCoreStatus);
+  }
+
+  @override
+  Future<String> startSpeedTest(String params) {
+    return invoke<String>(
+      method: ActionMethod.startSpeedTest,
+      data: params,
+      timeout: const Duration(minutes: 3),
+    );
+  }
+
+  @override
+  FutureOr<bool> cancelSpeedTest() {
+    return invoke<bool>(method: ActionMethod.cancelSpeedTest);
+  }
+
+  @override
+  Future<String> probeSpeedTest(String params) {
+    return invoke<String>(
+      method: ActionMethod.probeSpeedTest,
+      data: params,
+      timeout: const Duration(seconds: 30),
+    );
+  }
+
+  @override
+  Future<String> getSpeedTestServers(String params) {
+    return invoke<String>(
+      method: ActionMethod.getSpeedTestServers,
+      data: params,
+      timeout: const Duration(seconds: 30),
+    );
+  }
+
+  @override
+  Future<String> startStunTest(String params) {
+    return invoke<String>(
+      method: ActionMethod.startStunTest,
+      data: params,
+      timeout: const Duration(seconds: 60),
+    );
+  }
+
+  @override
+  FutureOr<bool> cancelStunTest() {
+    return invoke<bool>(method: ActionMethod.cancelStunTest);
+  }
+
+  @override
+  Future<String> startIperfServer(String params) {
+    return invoke<String>(
+      method: ActionMethod.startIperfServer,
+      data: params,
+      timeout: const Duration(seconds: 15),
+    );
+  }
+
+  @override
+  FutureOr<bool> stopIperfServer() {
+    return invoke<bool>(
+      method: ActionMethod.stopIperfServer,
+      timeout: const Duration(seconds: 15),
+    );
+  }
+
+  @override
+  Future<String> startIperfClient(String params, Duration timeout) {
+    return invoke<String>(
+      method: ActionMethod.startIperfClient,
+      data: params,
+      timeout: timeout,
+    );
+  }
+
+  @override
+  FutureOr<bool> cancelIperfClient() {
+    return invoke<bool>(method: ActionMethod.cancelIperfClient);
+  }
+
+  @override
+  Future<String> startLocalPing(String params, Duration timeout) {
+    return invoke<String>(
+      method: ActionMethod.startLocalPing,
+      data: params,
+      timeout: timeout,
+    );
+  }
+
+  @override
+  FutureOr<bool> cancelLocalPing() {
+    return invoke<bool>(method: ActionMethod.cancelLocalPing);
+  }
+
+  @override
+  Future<String> toolboxInvoke(ActionMethod method, {String data = ''}) {
+    return invoke<String>(
+      method: method,
+      data: data,
+      timeout: const Duration(seconds: 90),
+    );
   }
 
   @override
@@ -582,8 +832,11 @@ abstract class ClashHandlerInterface with ClashInterface {
   }
 
   @override
-  Future<Map<String, String>> generateAgeKeyPair() async {
-    final res = await invoke<Map>(method: ActionMethod.generateAgeKeyPair);
+  Future<Map<String, String>> generateAgeKeyPair({bool hybrid = false}) async {
+    final res = await invoke<Map>(
+      method: ActionMethod.generateAgeKeyPair,
+      data: hybrid ? 'mlkem768x25519' : 'x25519',
+    );
     return res.map((key, value) => MapEntry(key.toString(), value.toString()));
   }
 

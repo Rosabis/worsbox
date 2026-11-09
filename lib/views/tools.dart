@@ -11,7 +11,6 @@ import 'package:bett_box/views/about.dart';
 import 'package:bett_box/views/access.dart';
 import 'package:bett_box/views/application_setting.dart';
 import 'package:bett_box/views/config/config.dart';
-import 'package:bett_box/views/config/dns.dart';
 import 'package:bett_box/views/config/experimental.dart';
 import 'package:bett_box/views/config/general.dart';
 import 'package:bett_box/views/config/network.dart';
@@ -19,9 +18,10 @@ import 'package:bett_box/views/config/ntp.dart';
 import 'package:bett_box/views/config/sniffer.dart';
 import 'package:bett_box/views/config/tunnel.dart';
 import 'package:bett_box/views/connection/connections.dart';
-import 'package:bett_box/views/connection/requests.dart';
 import 'package:bett_box/views/hotkey.dart';
 import 'package:bett_box/views/other_setting.dart';
+import 'package:bett_box/views/profiles/scripts.dart';
+import 'package:bett_box/views/resources.dart';
 import 'package:bett_box/widgets/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -109,11 +109,22 @@ List<ToolsShortcut> getToolsShortcuts(
     for (final entry in SidebarFlyoutEntry.supportedValues)
       if (entries.contains(entry))
         ?switch (entry) {
-          SidebarFlyoutEntry.resources => buildNavigationShortcut(
-            PageLabel.resources,
+          SidebarFlyoutEntry.resources => ToolsShortcut(
+            icon: const Icon(Icons.storage),
+            title: appLocalizations.resources,
+            subtitle: appLocalizations.resourcesDesc,
+            builder: (_) => const ResourcesView(),
+            wrap: false,
           ),
-          SidebarFlyoutEntry.script => buildNavigationShortcut(
-            PageLabel.script,
+          SidebarFlyoutEntry.script => ToolsShortcut(
+            icon: const Icon(Icons.terminal_outlined),
+            title: appLocalizations.script,
+            subtitle: appLocalizations.scriptDesc,
+            builder: (_) => const ScriptsView(),
+            wrap: false,
+          ),
+          SidebarFlyoutEntry.toolbox => buildNavigationShortcut(
+            PageLabel.toolbox,
           ),
           SidebarFlyoutEntry.theme => ToolsShortcut(
             icon: const Icon(Icons.style),
@@ -192,9 +203,6 @@ class _ToolViewState extends ConsumerState<ToolsView> {
   Widget _buildNavigationPage(NavigationItem navigationItem) {
     if (navigationItem.label == PageLabel.connections) {
       return const ConnectionsView(respectCurrentPage: false);
-    }
-    if (navigationItem.label == PageLabel.requests) {
-      return const RequestsView();
     }
     return navigationItem.builder(context);
   }
@@ -617,20 +625,10 @@ class _ToolViewState extends ConsumerState<ToolsView> {
             const ApplicationSettingView(),
           ),
         ),
-      _SearchItem(
-        title: appLocalizations.autoCloseConnections,
-        subtitle: appLocalizations.autoCloseConnectionsDesc,
-        category: otherSettingsCategory,
-        onTap: (context, _) => _pushPage(
-          context,
-          appLocalizations.otherSettings,
-          const OtherSettingView(),
-        ),
-      ),
-      if (system.isAndroid)
+      if (system.isDesktop)
         _SearchItem(
-          title: appLocalizations.flushDnsOnNetworkChange,
-          subtitle: appLocalizations.flushDnsOnNetworkChangeDesc,
+          title: appLocalizations.autoCloseConnections,
+          subtitle: appLocalizations.autoCloseConnectionsDesc,
           category: otherSettingsCategory,
           onTap: (context, _) => _pushPage(
             context,
@@ -998,16 +996,6 @@ class _ToolViewState extends ConsumerState<ToolsView> {
             const NetworkListView(),
           ),
         ),
-      if (system.isMacOS)
-        _SearchItem(
-          title: appLocalizations.autoSetSystemDns,
-          category: networkCategory,
-          onTap: (context, _) => _pushPage(
-            context,
-            appLocalizations.network,
-            const NetworkListView(),
-          ),
-        ),
       if (!system.isAndroid)
         _SearchItem(
           title: appLocalizations.strictRoute,
@@ -1029,16 +1017,17 @@ class _ToolViewState extends ConsumerState<ToolsView> {
           const NetworkListView(),
         ),
       ),
-      _SearchItem(
-        title: appLocalizations.dnsHijack,
-        subtitle: appLocalizations.dnsHijackDesc,
-        category: networkCategory,
-        onTap: (context, _) => _pushPage(
-          context,
-          appLocalizations.network,
-          const NetworkListView(),
+      if (system.isDesktop)
+        _SearchItem(
+          title: appLocalizations.dnsHijack,
+          subtitle: appLocalizations.dnsHijackDesc,
+          category: networkCategory,
+          onTap: (context, _) => _pushPage(
+            context,
+            appLocalizations.network,
+            const NetworkListView(),
+          ),
         ),
-      ),
       _SearchItem(
         title: appLocalizations.endpointIndependentNat,
         subtitle: appLocalizations.endpointIndependentNatDesc,
@@ -1049,15 +1038,16 @@ class _ToolViewState extends ConsumerState<ToolsView> {
           const NetworkListView(),
         ),
       ),
-      _SearchItem(
-        title: appLocalizations.stackMode,
-        category: networkCategory,
-        onTap: (context, _) => _pushPage(
-          context,
-          appLocalizations.network,
-          const NetworkListView(),
+      if (!AppIdentity.isLite)
+        _SearchItem(
+          title: appLocalizations.stackMode,
+          category: networkCategory,
+          onTap: (context, _) => _pushPage(
+            context,
+            appLocalizations.network,
+            const NetworkListView(),
+          ),
         ),
-      ),
       _SearchItem(
         title: 'MTU',
         category: networkCategory,
@@ -1076,156 +1066,6 @@ class _ToolViewState extends ConsumerState<ToolsView> {
           appLocalizations.network,
           const NetworkListView(),
         ),
-      ),
-    ]);
-
-    final dnsCategory = '$configCategory/DNS';
-    items.addAll([
-      _SearchItem(
-        title: appLocalizations.overrideDns,
-        subtitle: appLocalizations.overrideDnsDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.status,
-        subtitle: appLocalizations.statusDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.listen,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.cacheAlgorithm,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.useHosts,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.useSystemHosts,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: 'IPv6',
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.respectRules,
-        subtitle: appLocalizations.respectRulesDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: 'PreferH3',
-        subtitle: appLocalizations.preferH3Desc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.dnsMode,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.fakeipRange,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.fakeipRangeV6,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.fakeIpFilterMode,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.fakeipFilter,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.fakeipTtl,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.defaultNameserver,
-        subtitle: appLocalizations.defaultNameserverDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.nameserverPolicy,
-        subtitle: appLocalizations.nameserverPolicyDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.nameserver,
-        subtitle: appLocalizations.nameserverDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.fallback,
-        subtitle: appLocalizations.fallbackDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.proxyNameserver,
-        subtitle: appLocalizations.proxyNameserverDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.directNameserver,
-        subtitle: appLocalizations.directNameserverDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.directNameserverFollowPolicy,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: 'Geoip',
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.geoipCode,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.fallbackConcurrent,
-        subtitle: appLocalizations.fallbackConcurrentDesc,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.ipcidr,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
-      ),
-      _SearchItem(
-        title: appLocalizations.domain,
-        category: dnsCategory,
-        onTap: (context, _) => _pushPage(context, 'DNS', const DnsListView()),
       ),
     ]);
 
@@ -1498,6 +1338,9 @@ class _ToolViewState extends ConsumerState<ToolsView> {
     final moreItems = ref.watch(
       moreToolsSelectorStateProvider.select((state) => state.navigationItems),
     );
+    final logsItem = isMobileView && !globalState.isAndroidTV
+        ? moreItems.where((item) => item.label == PageLabel.logs).firstOrNull
+        : null;
     final searchItems = _getSearchItems(moreItems);
     final searchResults = _query.isEmpty
         ? const <Widget>[]
@@ -1507,14 +1350,17 @@ class _ToolViewState extends ConsumerState<ToolsView> {
       Consumer(
         builder: (_, ref, _) {
           final state = ref.watch(moreToolsSelectorStateProvider);
-          if (state.navigationItems.isEmpty) {
+          final navigationItems = state.navigationItems
+              .where((item) => logsItem == null || item.label != logsItem.label)
+              .toList();
+          if (navigationItems.isEmpty) {
             return Container();
           }
           return _buildModernSection(
             context,
             title: appLocalizations.more,
             isFirst: true,
-            items: state.navigationItems
+            items: navigationItems
                 .map((item) => _buildNavigationMenuItem(item))
                 .toList(),
           );
@@ -1543,8 +1389,20 @@ class _ToolViewState extends ConsumerState<ToolsView> {
     ];
 
     return CommonScaffold(
-      title: appLocalizations.tools,
+      title: isMobileView ? appLocalizations.tools : appLocalizations.settings,
       searchState: AppBarSearchState(onSearch: _onSearchChanged),
+      actions: [
+        if (logsItem != null)
+          IconButton(
+            onPressed: () => showExtend(
+              context,
+              props: const ExtendProps(forceFull: true),
+              builder: (_, _) => _buildNavigationPage(logsItem),
+            ),
+            icon: logsItem.icon,
+            tooltip: Intl.message(logsItem.label.name),
+          ),
+      ],
       body: ScrollEdgeRise(
         builder: (context, rise) => ListView.builder(
           key: _query.isEmpty ? toolsStoreKey : null,
@@ -1554,7 +1412,7 @@ class _ToolViewState extends ConsumerState<ToolsView> {
           },
           padding: EdgeInsets.only(
             bottom:
-                (globalState.isAndroidTV ? 80.0 : 20.0) +
+                20.0 +
                 (isMobileView ? getFloatingBottomBarReserveHeight(context) : 0),
             top: 8 + rise,
           ),

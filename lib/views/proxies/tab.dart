@@ -64,6 +64,7 @@ class ProxiesTabViewState extends ConsumerState<ProxiesTabView>
   @override
   void dispose() {
     _destroyTabController();
+    _hasMoreButtonNotifier.dispose();
     super.dispose();
   }
 
@@ -99,12 +100,17 @@ class ProxiesTabViewState extends ConsumerState<ProxiesTabView>
   void _showMoreMenu() {
     showSheet(
       context: context,
-      props: SheetProps(isScrollControlled: false),
-      builder: (_, type) {
+      props: const SheetProps(expandable: false),
+      builder: (sheetContext, type) {
         return AdaptiveSheetScaffold(
           type: type,
           body: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              16 + MediaQuery.paddingOf(sheetContext).bottom,
+            ),
             child: Consumer(
               builder: (_, ref, _) {
                 final state = ref.watch(proxiesTabControllerStateProvider);
@@ -238,7 +244,10 @@ class ProxiesTabViewState extends ConsumerState<ProxiesTabView>
 
     final ProxyGroupViewKeyMap keyMap = {};
     final children = groups.map((group) {
-      final key = GlobalObjectKey<_ProxyGroupViewState>(group.name);
+      final key = _keyMap.putIfAbsent(
+        group.name,
+        () => GlobalObjectKey<_ProxyGroupViewState>(group.name),
+      );
       keyMap[group.name] = key;
       return KeepScope(
         keep: true,
@@ -326,8 +335,8 @@ class ProxiesTabViewState extends ConsumerState<ProxiesTabView>
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                   colors: [
-                    context.colorScheme.surfaceContainer.opacity10,
-                    context.colorScheme.surfaceContainer,
+                    context.colorScheme.pageColor.opacity10,
+                    context.colorScheme.pageColor,
                   ],
                   stops: const [0.0, 0.1],
                 ),

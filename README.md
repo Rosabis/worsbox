@@ -4,7 +4,7 @@
 
 <h1 align="center">⚡ Worsbox</h1>
 <p align="center">
-  <strong>Another Better Mihomo Client</strong>
+  <strong>Another Better Network Toolbox</strong>
 </p>
 
 **Worsbox 是一款使用Mihomo(Clash Meta)内核、基于FlClash早期版本进行重构的、多平台网络调试及规则分流客户端**
@@ -18,7 +18,7 @@ Worsbox意为: Better Experience, Out of the box - 更好的体验，亦开箱�
 [![Latest Release](https://img.shields.io/github/v/release/appshubcc/Bettbox?style=for-the-badge&logo=github&color=238636&label=Release)](https://github.com/appshubcc/Bettbox/releases/latest) [![Core](https://img.shields.io/github/v/release/MetaCubeX/mihomo?style=for-the-badge&logo=go&logoColor=white&color=8A2BE2&label=Mihomo)](https://github.com/MetaCubeX/mihomo/releases/latest)
 
 <p align="center">
-  <img src="snapshots/home.png" alt="Bettbox" />
+  <img src="snapshots/home.jpg" alt="Bettbox" />
 </p>
 
 ---

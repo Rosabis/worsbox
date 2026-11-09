@@ -31,7 +31,7 @@ class _OverrideProfileViewState extends State<OverrideProfileView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.afterRouteTransition(() async {
-        final rawConfig = await globalState.getProfileConfig(
+        final rawConfig = await globalState.getProfileSnippet(
           widget.profileId,
           effective: true,
         );
@@ -48,6 +48,12 @@ class _OverrideProfileViewState extends State<OverrideProfileView> {
             );
       });
     });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   void _handleSave(WidgetRef ref, OverrideData overrideData) {
@@ -74,11 +80,15 @@ class _OverrideProfileViewState extends State<OverrideProfileView> {
       profileOverrideStateProvider.select((state) => state.selectedRules),
     );
     ref.read(profileOverrideStateProvider.notifier).updateState((state) {
-      final overrideRule = state.overrideData!.rule.updateRules(
+      final overrideData = state.overrideData;
+      if (overrideData == null) return state;
+      final overrideRule = overrideData.rule.updateRules(
         (rules) =>
             List.from(rules.where((item) => !selectedRules.contains(item.id))),
       );
-      return state.copyWith.overrideData!(rule: overrideRule);
+      return state.copyWith(
+        overrideData: overrideData.copyWith(rule: overrideRule),
+      );
     });
     ref
         .read(profileOverrideStateProvider.notifier)
@@ -98,16 +108,7 @@ class _OverrideProfileViewState extends State<OverrideProfileView> {
             child: SyncedLoading(size: 40, child: CircularProgressIndicator()),
           );
         }
-        return FadeBox(
-          child: !isInit
-              ? const Center(
-                  child: SyncedLoading(
-                    size: 40,
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              : child!,
-        );
+        return FadeBox(child: child ?? const SizedBox());
       },
       child: LayoutBuilder(
         builder: (_, constraints) {
@@ -158,7 +159,7 @@ class _OverrideProfileViewState extends State<OverrideProfileView> {
       child: Consumer(
         builder: (_, ref, child) {
           _initState(ref);
-          return child!;
+          return child ?? const SizedBox();
         },
         child: Consumer(
           builder: (_, ref, _) {
@@ -262,11 +263,13 @@ class OverrideSwitch extends ConsumerWidget {
         delegate: SwitchDelegate(
           value: enable ?? false,
           onChanged: (value) {
-            ref
-                .read(profileOverrideStateProvider.notifier)
-                .updateState(
-                  (state) => state.copyWith.overrideData!(enable: value),
-                );
+            ref.read(profileOverrideStateProvider.notifier).updateState((
+              state,
+            ) {
+              final data = state.overrideData;
+              if (data == null) return state;
+              return state.copyWith(overrideData: data.copyWith(enable: value));
+            });
           },
         ),
       ),
@@ -280,34 +283,35 @@ class RuleTitle extends ConsumerWidget {
   const RuleTitle({super.key, required this.profileId});
 
   void _handleChangeType(WidgetRef ref, isOverrideRule) {
-    ref
-        .read(profileOverrideStateProvider.notifier)
-        .updateState(
-          (state) => state.copyWith.overrideData!.rule(
+    ref.read(profileOverrideStateProvider.notifier).updateState((state) {
+      final data = state.overrideData;
+      if (data == null) return state;
+      return state.copyWith(
+        overrideData: data.copyWith(
+          rule: data.rule.copyWith(
             type: isOverrideRule
                 ? OverrideRuleType.added
                 : OverrideRuleType.override,
           ),
-        );
+        ),
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context, ref) {
-    final vm3 = ref.watch(
+    final (isSelectMode, isSelectAll, isOverrideRule) = ref.watch(
       profileOverrideStateProvider.select((state) {
         final overrideRule = state.overrideData?.rule;
-        return VM3(
-          a: state.selectedRules.isNotEmpty,
-          b: state.selectedRules.containsAll(
-            overrideRule?.rules.map((item) => item.id).toSet() ?? {},
-          ),
-          c: overrideRule?.type == OverrideRuleType.override,
+        final rules = overrideRule?.rules ?? [];
+        return (
+          state.selectedRules.isNotEmpty,
+          rules.isNotEmpty &&
+              rules.every((item) => state.selectedRules.contains(item.id)),
+          overrideRule?.type == OverrideRuleType.override,
         );
       }),
     );
-    final isSelectMode = vm3.a;
-    final isSelectAll = vm3.b;
-    final isOverrideRule = vm3.c;
     return FilledButtonTheme(
       data: FilledButtonThemeData(
         style: ButtonStyle(
@@ -395,6 +399,16 @@ class _RuleParts {
     required this.target,
     required this.flags,
   });
+
+  static final _partsCache = Expando<_RuleParts>();
+
+  static _RuleParts of(Rule rule) {
+    final cached = _partsCache[rule];
+    if (cached != null) return cached;
+    final parts = _RuleParts.parse(rule.value);
+    _partsCache[rule] = parts;
+    return parts;
+  }
 
   factory _RuleParts.parse(String value) {
     final raw = value.trim();
@@ -509,7 +523,7 @@ class _RuleRowState extends State<RuleRow> {
   @override
   Widget build(BuildContext context) {
     final showControls = widget.isSelectMode || _hovered;
-    final parts = _RuleParts.parse(widget.rule.value);
+    final parts = _RuleParts.of(widget.rule);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -683,19 +697,16 @@ class RuleContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final vm3 = ref.watch(
+    final (rules, type, selectedRules) = ref.watch(
       profileOverrideStateProvider.select((state) {
         final overrideRule = state.overrideData?.rule;
-        return VM3(
-          a: overrideRule?.rules ?? [],
-          b: overrideRule?.type ?? OverrideRuleType.added,
-          c: state.selectedRules,
+        return (
+          overrideRule?.rules ?? [],
+          overrideRule?.type ?? OverrideRuleType.added,
+          state.selectedRules,
         );
       }),
     );
-    final rules = vm3.a;
-    final type = vm3.b;
-    final selectedRules = vm3.c;
     final isSelectMode = selectedRules.isNotEmpty;
     if (rules.isEmpty) {
       return SliverToBoxAdapter(
@@ -714,8 +725,12 @@ class RuleContent extends ConsumerWidget {
                       ref
                           .read(profileOverrideStateProvider.notifier)
                           .updateState((state) {
-                            return state.copyWith.overrideData!.rule(
-                              overrideRules: rules,
+                            final data = state.overrideData;
+                            if (data == null) return state;
+                            return state.copyWith(
+                              overrideData: data.copyWith(
+                                rule: data.rule.copyWith(overrideRules: rules),
+                              ),
                             );
                           });
                     },
@@ -752,19 +767,21 @@ class RuleContent extends ConsumerWidget {
         final newRules = List<Rule>.from(rules);
         final item = newRules.removeAt(oldIndex);
         newRules.insert(newIndex, item);
-        ref
-            .read(profileOverrideStateProvider.notifier)
-            .updateState(
-              (state) => state.copyWith.overrideData!(
-                rule: state.overrideData!.rule.updateRules((_) => newRules),
-              ),
-            );
+        ref.read(profileOverrideStateProvider.notifier).updateState((state) {
+          final data = state.overrideData;
+          if (data == null) return state;
+          return state.copyWith(
+            overrideData: data.copyWith(
+              rule: data.rule.updateRules((_) => newRules),
+            ),
+          );
+        });
       },
       keyBuilder: (int index) {
         return rules[index].value;
       },
       itemExtentBuilder: (index) {
-        final content = _RuleParts.parse(rules[index].value).content;
+        final content = _RuleParts.of(rules[index]).content;
         if (content.isEmpty) return 60;
         return 66 +
             globalState.measure
@@ -821,8 +838,9 @@ class _AddRuleDialogState extends State<AddRuleDialog> {
       ...widget.snippet.ruleProvider.map((item) => item.name),
     ];
     _subRuleItems = [...widget.snippet.subRules.map((item) => item.name)];
-    if (widget.rule != null) {
-      final parsedRule = ParsedRule.parseString(widget.rule!.value);
+    final currentRule = widget.rule;
+    if (currentRule != null) {
+      final parsedRule = ParsedRule.parseString(currentRule.value);
       _ruleAction = parsedRule.ruleAction;
       _contentController.text = parsedRule.content ?? '';
       _ruleTargetController.text = parsedRule.ruleTarget ?? '';
@@ -852,6 +870,15 @@ class _AddRuleDialogState extends State<AddRuleDialog> {
     }
   }
 
+  @override
+  void dispose() {
+    _ruleTargetController.dispose();
+    _contentController.dispose();
+    _ruleProviderController.dispose();
+    _subRuleController.dispose();
+    super.dispose();
+  }
+
   void _handleSubmit() {
     final res = _formKey.currentState?.validate();
     if (res == false) {
@@ -866,8 +893,9 @@ class _AddRuleDialogState extends State<AddRuleDialog> {
       noResolve: _noResolve,
       src: _src,
     );
-    final rule = widget.rule != null
-        ? widget.rule!.copyWith(value: parsedRule.value)
+    final targetRule = widget.rule;
+    final rule = targetRule != null
+        ? targetRule.copyWith(value: parsedRule.value)
         : Rule.value(parsedRule.value);
     Navigator.of(context).pop(rule);
   }
@@ -877,7 +905,7 @@ class _AddRuleDialogState extends State<AddRuleDialog> {
     required List<String> options,
     required TextEditingController controller,
   }) async {
-    final selected = await globalState.showCommonDialog<String>(
+    final selected = await globalState.showAdaptiveSheet<String>(
       child: OptionsDialog<String>(
         title: title,
         options: options,
@@ -885,14 +913,14 @@ class _AddRuleDialogState extends State<AddRuleDialog> {
         value: controller.text,
       ),
     );
-    if (selected == null) return;
+    if (selected == null || !mounted) return;
     setState(() {
       controller.text = selected;
     });
   }
 
   Future<void> _pickRuleAction() async {
-    final selected = await globalState.showCommonDialog<RuleAction>(
+    final selected = await globalState.showAdaptiveSheet<RuleAction>(
       child: OptionsDialog<RuleAction>(
         title: appLocalizations.ruleName,
         options: RuleAction.values,
@@ -900,7 +928,7 @@ class _AddRuleDialogState extends State<AddRuleDialog> {
         value: _ruleAction,
       ),
     );
-    if (selected == null) return;
+    if (selected == null || !mounted) return;
     setState(() {
       _ruleAction = selected;
     });
