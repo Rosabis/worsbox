@@ -140,7 +140,8 @@ class IpRiskScore extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _scoreColor(risk.score);
+    final score = risk.displayScore;
+    final color = _scoreColor(score);
     final muted = context.textTheme.labelSmall?.copyWith(
       color: context.colorScheme.onSurfaceVariant,
     );
@@ -162,7 +163,7 @@ class IpRiskScore extends StatelessWidget {
                       onTap: () => showIpRiskNote(risk),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Icon(
+                        child: AppIcon(
                           Icons.error_outline_rounded,
                           size: 13,
                           color: context.colorScheme.onSurfaceVariant,
@@ -176,7 +177,7 @@ class IpRiskScore extends StatelessWidget {
                   textBaseline: TextBaseline.alphabetic,
                   children: [
                     Text(
-                      '${risk.score}',
+                      '$score',
                       style: context.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: _tone(context, color),
@@ -206,7 +207,7 @@ class IpRiskScore extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        IpRiskScoreBar(score: risk.score),
+        IpRiskScoreBar(score: score),
         const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -228,8 +229,10 @@ class IpRiskChecks extends StatelessWidget {
   Widget _chip(BuildContext context, IpRiskCheck check) {
     final colorScheme = context.colorScheme;
     final hit = check.hit;
+    final highRisk = risk.displayScore > 10;
+    final hitBaseColor = highRisk ? colorScheme.error : _riskGradient[1];
     final color = switch (hit) {
-      true => colorScheme.error,
+      true => highRisk ? colorScheme.error : _tone(context, hitBaseColor),
       false => colorScheme.onSurfaceVariant,
       null => colorScheme.outline,
     };
@@ -237,14 +240,14 @@ class IpRiskChecks extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(6, 3, 8, 3),
       decoration: BoxDecoration(
         color: hit == true
-            ? colorScheme.error.withValues(alpha: 0.12)
+            ? hitBaseColor.withValues(alpha: highRisk ? 0.12 : 0.14)
             : colorScheme.onSurface.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
+          AppIcon(
             switch (hit) {
               true => Icons.error_rounded,
               false => Icons.circle_outlined,
@@ -277,7 +280,7 @@ class IpRiskChecks extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle_rounded, size: 12, color: color),
+          AppIcon(Icons.check_circle_rounded, size: 12, color: color),
           const SizedBox(width: 4),
           Text(
             appLocalizations.ipRiskHomeBroadband,
@@ -300,7 +303,7 @@ class IpRiskChecks extends StatelessWidget {
       for (final group in IpRiskGroup.values)
         (group, risk.checks.where((check) => check.group == group).toList()),
     ].where((entry) => entry.$2.isNotEmpty).toList();
-    final isHome = risk.checks.every((check) => check.hit != true);
+    final isHome = risk.isHomeBroadband;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -364,7 +367,7 @@ Future<void> showIpRiskNote(IpRisk risk) async {
             child: Text(appLocalizations.confirm),
           ),
         ],
-        child: IpRiskNoteView(risk: risk),
+        child: IpRiskNoteView(risk: risk.normalized),
       ),
     ),
   );
@@ -377,7 +380,7 @@ class IpRiskNoteView extends StatelessWidget {
 
   String get _basis {
     final note = risk.note;
-    final score = risk.score;
+    final score = risk.displayScore;
     final isp = note?.isp ?? '';
     return switch (note?.direct) {
       true => appLocalizations.ipRiskNoteDirect(score),
@@ -463,9 +466,8 @@ class IpRiskNoteView extends StatelessWidget {
           appLocalizations.ipRiskNoteShare,
           TextSpan(text: share.label),
         ),
-      if (note case IpRiskNote(
-        :final operatorName,
-      ) when operatorName.isNotEmpty)
+      if (note case IpRiskNote(:final operatorName)
+          when operatorName.isNotEmpty)
         _row(
           context,
           appLocalizations.isp,
@@ -521,7 +523,7 @@ class IpRiskNoteView extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
+                AppIcon(
                   Icons.warning_amber_rounded,
                   size: 16,
                   color: colorScheme.error,

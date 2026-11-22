@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
@@ -52,13 +53,15 @@ Future<void> showIpDetailDialog(
                 )
           : null);
 
-  globalState.showAdaptiveSheet(
-    child: _IpDetailDialog(
-      ip: cleanIp,
-      preloaded: info,
-      riskView: riskView,
-      preloadedRisk: preloadedRisk,
-      persistRisk: followRiskSetting,
+  unawaited(
+    globalState.showAdaptiveSheet(
+      child: _IpDetailDialog(
+        ip: cleanIp,
+        preloaded: info,
+        riskView: riskView,
+        preloadedRisk: preloadedRisk,
+        persistRisk: followRiskSetting,
+      ),
     ),
   );
 }
@@ -92,10 +95,12 @@ class _IpDetailDialogState extends ConsumerState<_IpDetailDialog> {
   bool _riskFailed = false;
   bool _editing = false;
   int _riskSerial = 0;
+  final _cancelToken = CancelToken();
   final _ipController = TextEditingController();
 
   @override
   void dispose() {
+    _cancelToken.cancel();
     _ipController.dispose();
     super.dispose();
   }
@@ -149,7 +154,10 @@ class _IpDetailDialogState extends ConsumerState<_IpDetailDialog> {
       return;
     }
 
-    final res = await request.queryIpDetail(widget.ip);
+    final res = await request.queryIpDetail(
+      widget.ip,
+      cancelToken: _cancelToken,
+    );
     if (!mounted) return;
     await _afterEntrance();
     if (!mounted) return;
@@ -194,7 +202,7 @@ class _IpDetailDialogState extends ConsumerState<_IpDetailDialog> {
               color: iconColor.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 14, color: iconColor),
+            child: AppIcon(icon, size: 14, color: iconColor),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -246,7 +254,11 @@ class _IpDetailDialogState extends ConsumerState<_IpDetailDialog> {
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-      icon: Icon(icon, size: 15, color: context.colorScheme.onSurfaceVariant),
+      icon: AppIcon(
+        icon,
+        size: 15,
+        color: context.colorScheme.onSurfaceVariant,
+      ),
       tooltip: tooltip,
       onPressed: onPressed,
     );
@@ -264,7 +276,11 @@ class _IpDetailDialogState extends ConsumerState<_IpDetailDialog> {
 
   Future<void> _fetchRisk(String ip, {bool force = false}) async {
     final serial = ++_riskSerial;
-    final res = await request.queryIpRisk(ip, force: force);
+    final res = await request.queryIpRisk(
+      ip,
+      force: force,
+      cancelToken: _cancelToken,
+    );
     if (!mounted) return;
     await _afterEntrance();
     if (!mounted || serial != _riskSerial) return;
@@ -373,7 +389,7 @@ class _IpDetailDialogState extends ConsumerState<_IpDetailDialog> {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(
+                  AppIcon(
                     Icons.edit_outlined,
                     size: 13,
                     color: context.colorScheme.onSurfaceVariant,
@@ -545,7 +561,10 @@ class _IpDetailDialogState extends ConsumerState<_IpDetailDialog> {
                           ),
                           TextButton.icon(
                             onPressed: () => _loadRisk(ip, force: true),
-                            icon: const Icon(Icons.refresh_rounded, size: 16),
+                            icon: const AppIcon(
+                              Icons.refresh_rounded,
+                              size: 16,
+                            ),
                             label: Text(appLocalizations.retry),
                           ),
                         ],

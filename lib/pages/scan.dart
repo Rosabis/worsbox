@@ -27,19 +27,18 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   StreamSubscription<Object?>? _subscription;
   bool _handled = false;
   bool _permissionDenied = false;
-  bool _permissionChecking = false;
+  bool _starting = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _subscription = controller.barcodes.listen(_handleBarcode);
-    // Check permission and start camera
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.afterRouteTransition(() {
         if (!mounted) return;
-        _checkCameraPermission();
+        _ensureCameraStarted();
       });
     });
   }
@@ -68,8 +67,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         return;
       case AppLifecycleState.resumed:
         _subscription ??= controller.barcodes.listen(_handleBarcode);
-        // Recheck permission when returning from settings
-        _checkCameraPermission();
+        _ensureCameraStarted();
         return;
       case AppLifecycleState.inactive:
         unawaited(_subscription?.cancel());
@@ -81,35 +79,30 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _checkCameraPermission() async {
-    if (_permissionChecking) return; // Prevent concurrent checks
+  Future<void> _ensureCameraStarted() async {
+    if (_starting) return;
 
-    setState(() {
-      _permissionChecking = true;
-    });
-
-    final granted = await app.hasCameraPermission();
-    if (!mounted) return;
-
-    setState(() {
-      _permissionDenied = !granted;
-      _permissionChecking = false;
-    });
-
-    if (!granted) {
-      if (controller.value.isRunning) {
-        await controller.stop();
+    _starting = true;
+    try {
+      if (_permissionDenied && !await app.hasCameraPermission()) {
+        return;
       }
-    } else {
-      // Start camera only if not already running
-      if (!controller.value.isRunning && !controller.value.isInitialized) {
-        try {
-          await controller.start();
-        } catch (e) {
-          // Handle start error silently
-          commonPrint.warn('Camera start error: $e');
-        }
+      if (!controller.value.isRunning) {
+        await controller.start();
       }
+      if (!mounted) return;
+      final denied =
+          controller.value.error?.errorCode ==
+          MobileScannerErrorCode.permissionDenied;
+      if (denied != _permissionDenied) {
+        setState(() {
+          _permissionDenied = denied;
+        });
+      }
+    } catch (e) {
+      commonPrint.log('Camera start error: $e');
+    } finally {
+      _starting = false;
     }
   }
 
@@ -125,33 +118,28 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       body: Stack(
         children: [
           Center(
-            child: _permissionChecking
-                ? Container(color: Colors.black)
-                : (_permissionDenied
-                      ? _buildPermissionDeniedView(context)
-                      : MobileScanner(
-                          controller: controller,
-                          scanWindow: scanWindow,
-                          errorBuilder: (context, error) {
-                            if (error.errorCode ==
-                                MobileScannerErrorCode.permissionDenied) {
-                              if (!_permissionDenied && mounted) {
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (!mounted) return;
-                                  setState(() {
-                                    _permissionDenied = true;
-                                  });
-                                });
-                              }
-                              unawaited(controller.stop());
-                              return _buildPermissionDeniedView(context);
-                            }
-                            return _buildErrorView(context, error);
-                          },
-                        )),
+            child: MobileScanner(
+              controller: controller,
+              scanWindow: scanWindow,
+              errorBuilder: (context, error) {
+                if (error.errorCode ==
+                    MobileScannerErrorCode.permissionDenied) {
+                  if (!_starting && !_permissionDenied && mounted) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      setState(() {
+                        _permissionDenied = true;
+                      });
+                    });
+                    unawaited(controller.stop());
+                  }
+                  return _buildPermissionDeniedView(context);
+                }
+                return _buildErrorView(context, error);
+              },
+            ),
           ),
+          if (_permissionDenied) _buildPermissionDeniedView(context),
           if (!_permissionDenied)
             CustomPaint(painter: ScannerOverlay(scanWindow: scanWindow)),
           AppBar(
@@ -165,27 +153,27 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              icon: const Icon(Icons.close),
+              icon: Icon(context.resolveIcon(Icons.close)),
             ),
             actions: [
               if (!_permissionDenied)
                 ValueListenableBuilder<MobileScannerState>(
                   valueListenable: controller,
                   builder: (context, state, _) {
-                    var icon = const Icon(Icons.flash_off);
+                    var icon = Icon(context.resolveIcon(Icons.flash_off));
                     var backgroundColor = Colors.black12;
                     switch (state.torchState) {
                       case TorchState.off:
-                        icon = const Icon(Icons.flash_off);
+                        icon = Icon(context.resolveIcon(Icons.flash_off));
                         backgroundColor = Colors.black12;
                       case TorchState.on:
-                        icon = const Icon(Icons.flash_on);
+                        icon = Icon(context.resolveIcon(Icons.flash_on));
                         backgroundColor = Colors.orange;
                       case TorchState.unavailable:
-                        icon = const Icon(Icons.flash_off);
+                        icon = Icon(context.resolveIcon(Icons.flash_off));
                         backgroundColor = Colors.transparent;
                       case TorchState.auto:
-                        icon = const Icon(Icons.flash_auto);
+                        icon = Icon(context.resolveIcon(Icons.flash_auto));
                         backgroundColor = Colors.orange;
                     }
                     return Container(
@@ -224,7 +212,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
                 padding: const EdgeInsets.all(16),
                 iconSize: 32.0,
                 onPressed: globalState.appController.addProfileFormQrCode,
-                icon: const Icon(Icons.photo_camera_back),
+                icon: Icon(context.resolveIcon(Icons.photo_camera_back)),
               ),
             ),
         ],
@@ -242,8 +230,8 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.camera_alt_outlined,
+              Icon(
+                context.resolveIcon(Icons.camera_alt_outlined),
                 size: 80,
                 color: Colors.white54,
               ),
@@ -294,7 +282,11 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error_outline, size: 80, color: Colors.red),
+              Icon(
+                context.resolveIcon(Icons.error_outline),
+                size: 80,
+                color: Colors.red,
+              ),
               const SizedBox(height: 24),
               Text(
                 errorMessage,

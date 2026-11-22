@@ -19,7 +19,7 @@ class OptionsDialog<T> extends StatelessWidget {
   final List<T> options;
   final T value;
   final String Function(T value) textBuilder;
-  final String Function(T value)? subtitleBuilder;
+  final String? Function(T value)? subtitleBuilder;
 
   const OptionsDialog({
     super.key,
@@ -86,7 +86,11 @@ class OptionItem extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  context.resolveIcon(
+                    selected
+                        ? Icons.check_circle_rounded
+                        : Icons.circle_outlined,
+                  ),
                   size: 21,
                   color: selected
                       ? colorScheme.primary
@@ -95,6 +99,7 @@ class OptionItem extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (selected)
@@ -115,7 +120,8 @@ class OptionItem extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
                         ),
-                      if (subtitle case final subtitle?)
+                      if (subtitle case final subtitle?
+                          when subtitle.trim().isNotEmpty)
                         Text(
                           subtitle,
                           maxLines: 2,
@@ -228,76 +234,94 @@ class _InputDialogState extends State<InputDialog> with IdleAutofocusMixin {
       return;
     }
     final text = textController.value.text;
+    await context.dismissKeyboard();
+    if (!mounted) return;
     Navigator.of(context).pop<String>(text);
   }
 
   Future<void> _handleReset() async {
-    if (widget.resetValue == null) {
+    final resetVal = widget.resetValue;
+    if (resetVal == null) {
       return;
     }
-    Navigator.of(context).pop<String>(widget.resetValue);
+    await context.dismissKeyboard();
+    if (!mounted) return;
+    Navigator.of(context).pop<String>(resetVal);
   }
 
   @override
   Widget build(BuildContext context) {
-    return CommonDialog(
-      title: title,
-      actions: [
-        if (widget.resetValue != null &&
-            textController.value.text != widget.resetValue) ...[
-          TextButton(
-            onPressed: _handleReset,
-            child: Text(appLocalizations.reset),
-          ),
-          const SizedBox(width: 4),
-        ],
-        TextButton(
-          onPressed: _handleUpdate,
-          child: Text(appLocalizations.submit),
-        ),
-      ],
-      child: Form(
-        autovalidateMode: widget.autovalidateMode,
-        key: _formKey,
-        child: Wrap(
-          runSpacing: 16,
-          children: [
-            TextFormField(
-              focusNode: autofocusNode,
-              obscureText: _obscure,
-              keyboardType:
-                  widget.keyboardType ??
-                  (widget.obscureText == true
-                      ? TextInputType.visiblePassword
-                      : TextInputType.text),
-              textInputAction: widget.textInputAction ?? TextInputAction.done,
-              maxLines: widget.obscureText == true ? 1 : widget.maxLines,
-              minLines: 1,
-              controller: textController,
-              onFieldSubmitted: (_) {
-                _handleUpdate();
-              },
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                suffixText: suffixText,
-                hintText: widget.hintText,
-                labelText: widget.labelText,
-                suffixIcon: widget.obscureText == true
-                    ? IconButton(
-                        icon: Icon(
-                          _obscure ? Icons.visibility : Icons.visibility_off,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscure = !_obscure;
-                          });
-                        },
-                      )
-                    : null,
-              ),
-              validator: widget.validator,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await context.dismissKeyboard();
+        if (!context.mounted) return;
+        Navigator.of(context).pop();
+      },
+      child: CommonDialog(
+        title: title,
+        actions: [
+          if (widget.resetValue != null &&
+              textController.value.text != widget.resetValue) ...[
+            TextButton(
+              onPressed: _handleReset,
+              child: Text(appLocalizations.reset),
             ),
+            const SizedBox(width: 4),
           ],
+          TextButton(
+            onPressed: _handleUpdate,
+            child: Text(appLocalizations.submit),
+          ),
+        ],
+        child: Form(
+          autovalidateMode: widget.autovalidateMode,
+          key: _formKey,
+          child: Wrap(
+            runSpacing: 16,
+            children: [
+              TextFormField(
+                focusNode: autofocusNode,
+                obscureText: _obscure,
+                keyboardType:
+                    widget.keyboardType ??
+                    (widget.obscureText == true
+                        ? TextInputType.visiblePassword
+                        : TextInputType.text),
+                textInputAction: widget.textInputAction ?? TextInputAction.done,
+                maxLines: widget.obscureText == true ? 1 : widget.maxLines,
+                minLines: 1,
+                controller: textController,
+                onFieldSubmitted: (_) {
+                  _handleUpdate();
+                },
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  suffixText: suffixText,
+                  hintText: widget.hintText,
+                  labelText: widget.labelText,
+                  suffixIcon: widget.obscureText == true
+                      ? IconButton(
+                          icon: Icon(
+                            context.resolveIcon(
+                              _obscure
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscure = !_obscure;
+                            });
+                          },
+                        )
+                      : null,
+                ),
+                validator: widget.validator,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -374,9 +398,11 @@ class ListInputPage extends StatelessWidget {
       floatingWidget: FloatWrapper(
         child: FloatingActionButton(
           onPressed: () async {
-            _handleAddOrEdit();
+            await context.dismissKeyboard();
+            if (!context.mounted) return;
+            unawaited(_handleAddOrEdit());
           },
-          child: const Icon(Icons.add),
+          child: Icon(context.resolveIcon(Icons.add)),
         ),
       ),
       child: items.isEmpty
@@ -406,7 +432,9 @@ class ListInputPage extends StatelessWidget {
                               ? subtitleBuilder!(e)
                               : null,
                           trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline),
+                            icon: Icon(
+                              context.resolveIcon(Icons.delete_outline),
+                            ),
                             onPressed: () {
                               _handleDelete(e);
                             },
@@ -535,9 +563,11 @@ class MapInputPage extends StatelessWidget {
       floatingWidget: FloatWrapper(
         child: FloatingActionButton(
           onPressed: () async {
-            _handleAddOrEdit();
+            await context.dismissKeyboard();
+            if (!context.mounted) return;
+            unawaited(_handleAddOrEdit());
           },
-          child: const Icon(Icons.add),
+          child: Icon(context.resolveIcon(Icons.add)),
         ),
       ),
       child: items.isEmpty
@@ -569,7 +599,9 @@ class MapInputPage extends StatelessWidget {
                               : null,
                           trailing: (canDelete == null || canDelete!(e))
                               ? IconButton(
-                                  icon: const Icon(Icons.delete_outline),
+                                  icon: Icon(
+                                    context.resolveIcon(Icons.delete_outline),
+                                  ),
                                   onPressed: () {
                                     _handleDelete(e);
                                   },
@@ -615,7 +647,7 @@ class AddDialog extends StatefulWidget {
   State<AddDialog> createState() => _AddDialogState();
 }
 
-class _AddDialogState extends State<AddDialog> {
+class _AddDialogState extends State<AddDialog> with IdleAutofocusMixin {
   TextEditingController? keyController;
   late TextEditingController valueController;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
@@ -623,6 +655,9 @@ class _AddDialogState extends State<AddDialog> {
   Field? get keyField => widget.keyField;
 
   Field get valueField => widget.valueField;
+
+  @override
+  bool get autofocusWhenIdle => true;
 
   @override
   void initState() {
@@ -640,8 +675,10 @@ class _AddDialogState extends State<AddDialog> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    await context.dismissKeyboard();
+    if (!mounted) return;
     if (keyField != null) {
       Navigator.of(context).pop<MapEntry<String, String>>(
         MapEntry(keyController!.text, valueController.text),
@@ -653,63 +690,74 @@ class _AddDialogState extends State<AddDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return CommonDialog(
-      title: widget.title,
-      actions: [
-        TextButton(onPressed: _submit, child: Text(appLocalizations.confirm)),
-      ],
-      child: Form(
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-        key: _formKey,
-        child: Wrap(
-          runSpacing: 16,
-          children: [
-            if (keyField != null)
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await context.dismissKeyboard();
+        if (!context.mounted) return;
+        Navigator.of(context).pop();
+      },
+      child: CommonDialog(
+        title: widget.title,
+        actions: [
+          TextButton(onPressed: _submit, child: Text(appLocalizations.confirm)),
+        ],
+        child: Form(
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          key: _formKey,
+          child: Wrap(
+            runSpacing: 16,
+            children: [
+              if (keyField != null)
+                TextFormField(
+                  focusNode: autofocusNode,
+                  maxLines: 2,
+                  minLines: 1,
+                  controller: keyController,
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    labelText: keyField!.label,
+                  ),
+                  validator: (String? value) {
+                    String? res;
+                    if (keyField!.validator != null) {
+                      res = keyField!.validator!(value);
+                    }
+                    if (res != null) {
+                      return res;
+                    }
+                    if (value == null || value.isEmpty) {
+                      return appLocalizations.emptyTip(appLocalizations.key);
+                    }
+                    return null;
+                  },
+                ),
               TextFormField(
-                maxLines: 2,
+                focusNode: keyField == null ? autofocusNode : null,
+                maxLines: 3,
                 minLines: 1,
-                controller: keyController,
+                controller: valueController,
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
-                  labelText: keyField!.label,
+                  labelText: valueField.label,
                 ),
                 validator: (String? value) {
                   String? res;
-                  if (keyField!.validator != null) {
-                    res = keyField!.validator!(value);
+                  if (valueField.validator != null) {
+                    res = valueField.validator!(value);
                   }
                   if (res != null) {
                     return res;
                   }
                   if (value == null || value.isEmpty) {
-                    return appLocalizations.emptyTip(appLocalizations.key);
+                    return appLocalizations.emptyTip(appLocalizations.value);
                   }
                   return null;
                 },
               ),
-            TextFormField(
-              maxLines: 3,
-              minLines: 1,
-              controller: valueController,
-              decoration: InputDecoration(
-                border: const OutlineInputBorder(),
-                labelText: valueField.label,
-              ),
-              validator: (String? value) {
-                String? res;
-                if (valueField.validator != null) {
-                  res = valueField.validator!(value);
-                }
-                if (res != null) {
-                  return res;
-                }
-                if (value == null || value.isEmpty) {
-                  return appLocalizations.emptyTip(appLocalizations.value);
-                }
-                return null;
-              },
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

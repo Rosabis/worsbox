@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
@@ -7,7 +9,6 @@ import 'package:material_color_utilities/material_color_utilities.dart'
     show DynamicScheme, Variant;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'app.dart';
@@ -43,7 +44,6 @@ Config configState(Ref ref) {
   final overrideSniffer = ref.watch(overrideSnifferProvider);
   final overrideTunnel = ref.watch(overrideTunnelProvider);
   final overrideExperimental = ref.watch(overrideExperimentalProvider);
-  final overrideTestUrl = ref.watch(overrideTestUrlProvider);
   final networkProps = ref.watch(networkSettingProvider);
   final vpnProps = ref.watch(vpnSettingProvider);
   final proxiesStyle = ref.watch(proxiesStyleSettingProvider);
@@ -53,7 +53,9 @@ Config configState(Ref ref) {
   final hotKeyActions = ref.watch(hotKeyActionsProvider);
   final dav = ref.watch(appDAVSettingProvider);
   final windowProps = ref.watch(windowSettingProvider);
+  final nodes = ref.watch(nodesProvider);
   return Config(
+    nodes: nodes,
     dav: dav,
     windowProps: windowProps,
     hotKeyActions: hotKeyActions,
@@ -67,7 +69,6 @@ Config configState(Ref ref) {
     overrideSniffer: overrideSniffer,
     overrideTunnel: overrideTunnel,
     overrideExperimental: overrideExperimental,
-    overrideTestUrl: overrideTestUrl,
     currentProfileId: currentProfileId,
     profiles: profiles,
     appSetting: appSetting,
@@ -173,10 +174,6 @@ UpdateParams updateParams(Ref ref) {
       (state) => UpdateParams(
         tun: state.tun.getRealTun(
           bypassPrivateRoute,
-          fakeIpRange: state.dns.fakeIpRange,
-          fakeIpRangeV6: state.dns.effectiveFakeIpRangeV6(
-            ipv6Enabled: state.ipv6,
-          ),
           bypassPrivateRouteAddress: realBypassPrivateRouteAddress,
         ),
         allowLan: state.allowLan,
@@ -185,7 +182,7 @@ UpdateParams updateParams(Ref ref) {
         logLevel: state.logLevel,
         ipv6: state.ipv6,
         tcpConcurrent: state.tcpConcurrent,
-        externalController: state.externalController,
+        externalController: state.externalControllerAddress,
         unifiedDelay: state.unifiedDelay,
         mixedPort: state.mixedPort,
       ),
@@ -198,7 +195,7 @@ ProxyState proxyState(Ref ref) {
   final isStart = ref.watch(runTimeProvider.select((state) => state != null));
   final vm2 = ref.watch(
     networkSettingProvider.select(
-      (state) => VM2(a: state.systemProxy, b: state.bypassDomain),
+      (state) => (a: state.systemProxy, b: state.bypassDomain),
     ),
   );
   final mixedPort = ref.watch(
@@ -212,9 +209,17 @@ ProxyState proxyState(Ref ref) {
   );
 }
 
-final wakelockStateProvider = StateProvider<bool>((ref) => false);
+@Riverpod(keepAlive: true)
+class WakelockState extends _$WakelockState with NotifierValueMixin {
+  @override
+  bool build() => false;
+}
 
-final isRestartingCoreProvider = StateProvider<bool>((ref) => false);
+@Riverpod(keepAlive: true)
+class IsRestartingCore extends _$IsRestartingCore with NotifierValueMixin {
+  @override
+  bool build() => false;
+}
 
 @riverpod
 TrayState trayState(Ref ref) {
@@ -257,10 +262,22 @@ VpnState vpnState(Ref ref) {
   return VpnState(stack: stack, vpnProps: vpnProps);
 }
 
+PageLabel shownPageLabelOf(
+  PageLabel pageLabel,
+  List<NavigationItem> navigationItems,
+) {
+  if (navigationItems.isEmpty ||
+      navigationItems.any((item) => item.label == pageLabel)) {
+    return pageLabel;
+  }
+  return navigationItems.first.label;
+}
+
 @riverpod
 NavigationState navigationState(Ref ref) {
-  final pageLabel = ref.watch(currentPageLabelProvider);
+  final rawPageLabel = ref.watch(currentPageLabelProvider);
   final navigationItems = ref.watch(currentNavigationItemsStateProvider).value;
+  final pageLabel = shownPageLabelOf(rawPageLabel, navigationItems);
   final viewMode = ref.watch(viewModeProvider);
   final locale = ref.watch(appSettingProvider).locale;
   final index = navigationItems.lastIndexWhere(
@@ -285,8 +302,12 @@ DashboardState dashboardState(Ref ref) {
           : state.desktopDashboardWidgets,
     ),
   );
+  final showStartSwitch = ref.watch(
+    appSettingProvider.select((state) => state.showStartSwitch),
+  );
   final viewWidth = ref.watch(viewWidthProvider);
-  final widgets = dashboardWidgets.contains(DashboardWidget.startButton)
+  final widgets =
+      showStartSwitch || dashboardWidgets.contains(DashboardWidget.startButton)
       ? dashboardWidgets
       : [...dashboardWidgets, DashboardWidget.startButton];
   return DashboardState(dashboardWidgets: widgets, viewWidth: viewWidth);
@@ -420,7 +441,6 @@ List<Group> hideTimeoutProxies({
   required List<Group> allGroups,
   required SelectedMap selectedMap,
   required DelayMap delayMap,
-  required bool overrideTestUrl,
   required String defaultTestUrl,
 }) {
   final proxyTypes = {
@@ -431,10 +451,10 @@ List<Group> hideTimeoutProxies({
   return groups.map((group) {
     final selectedName = (allGroups.getGroup(group.name) ?? group)
         .getCurrentSelectedName(selectedMap[group.name] ?? '');
-    final visible = group.all.where((proxy) {
-      if (proxy.name == selectedName ||
-          allGroups.getGroup(proxy.name) != null) {
-        return true;
+
+    bool isTimeout(Proxy proxy) {
+      if (allGroups.getGroup(proxy.name) != null) {
+        return false;
       }
       final state = states.putIfAbsent(
         proxy.name,
@@ -445,14 +465,26 @@ List<Group> hideTimeoutProxies({
         ),
       );
       if (_unprobeableProxyTypes.contains(proxyTypes[state.proxyName])) {
-        return true;
+        return false;
       }
       final testUrl = state.testUrl.getSafeValue(group.testUrl ?? '');
-      final url = overrideTestUrl || testUrl.isEmpty ? defaultTestUrl : testUrl;
+      final url = testUrl.isEmpty ? defaultTestUrl : testUrl;
       final delay = delayMap[url]?[state.proxyName];
-      return delay == null || delay >= 0;
+      return delay != null && delay < 0;
+    }
+
+    final hasUsable = group.all.any((proxy) => !isTimeout(proxy));
+    if (!hasUsable) {
+      return group;
+    }
+
+    final visible = group.all.where((proxy) {
+      if (proxy.name == selectedName) {
+        return true;
+      }
+      return !isTimeout(proxy);
     }).toList();
-    return group.copyWith(all: visible.isEmpty ? group.all : visible);
+    return group.copyWith(all: visible);
   }).toList();
 }
 
@@ -469,7 +501,6 @@ GroupsState _hideTimeoutGroups(Ref ref, List<Group> groups) {
       allGroups: ref.watch(groupsProvider),
       selectedMap: ref.watch(selectedMapProvider),
       delayMap: ref.watch(delaySortSnapshotProvider),
-      overrideTestUrl: ref.watch(overrideTestUrlProvider),
       defaultTestUrl: ref.watch(
         appSettingProvider.select((state) => state.testUrl),
       ),
@@ -549,9 +580,8 @@ class SortedGroupProxies extends _$SortedGroupProxies {
   @override
   List<Proxy>? build(String query, String groupName) {
     final group = ref.watch(
-      filterGroupsStateProvider(
-        query,
-      ).select((state) => state.value.getGroup(groupName)),
+      filterGroupsStateProvider(query)
+          .select((state) => state.value.getGroup(groupName)),
     );
     if (group == null) return _lastSorted = const [];
     final proxies = group.all;
@@ -566,7 +596,6 @@ class SortedGroupProxies extends _$SortedGroupProxies {
         groups: ref.read(groupsProvider),
         selectedMap: ref.read(selectedMapProvider),
         delayMap: ref.watch(delaySortSnapshotProvider),
-        overrideTestUrl: ref.watch(overrideTestUrlProvider),
         defaultTestUrl: ref.watch(
           appSettingProvider.select((state) => state.testUrl),
         ),
@@ -653,7 +682,7 @@ ProxiesTabState proxiesTabState(Ref ref) {
   );
   final vm2 = ref.watch(
     proxiesStyleSettingProvider.select(
-      (state) => VM2(a: state.sortType, b: state.cardType),
+      (state) => (a: state.sortType, b: state.cardType),
     ),
   );
   final sortNum = ref.watch(sortNumProvider);
@@ -669,10 +698,10 @@ ProxiesTabState proxiesTabState(Ref ref) {
 }
 
 @Riverpod(dependencies: [proxiesTabState])
-VM2<List<String>, String?> proxiesTabControllerState(Ref ref) {
+({List<String> a, String? b}) proxiesTabControllerState(Ref ref) {
   return ref.watch(
     proxiesTabStateProvider.select(
-      (state) => VM2(
+      (state) => (
         a: state.groups.map((group) => group.name).toList(),
         b: state.currentGroupName,
       ),
@@ -767,15 +796,12 @@ bool isCurrentPage(
 
 @riverpod
 String getRealTestUrl(Ref ref, [String? testUrl]) {
-  final overrideTestUrl = ref.watch(overrideTestUrlProvider);
   final currentTestUrl = ref.watch(appSettingProvider).testUrl;
 
-  // If override is enabled or testUrl is null or empty, use client setting
-  if (overrideTestUrl || testUrl == null || testUrl.isEmpty) {
+  if (testUrl == null || testUrl.isEmpty) {
     return currentTestUrl;
   }
 
-  // Otherwise use the provided testUrl from config file
   return testUrl;
 }
 
@@ -876,7 +902,6 @@ int? Function(String proxyName, String? testUrl) createDelayLookup({
   required List<Group> groups,
   required SelectedMap selectedMap,
   required DelayMap delayMap,
-  required bool overrideTestUrl,
   required String defaultTestUrl,
 }) {
   final cache = <(String, String?), int?>{};
@@ -887,9 +912,7 @@ int? Function(String proxyName, String? testUrl) createDelayLookup({
       ProxyCardState(proxyName: proxyName),
     );
     final realTestUrl = state.testUrl.getSafeValue(testUrl ?? '');
-    final url = overrideTestUrl || realTestUrl.isEmpty
-        ? defaultTestUrl
-        : realTestUrl;
+    final url = realTestUrl.isEmpty ? defaultTestUrl : realTestUrl;
     return delayMap[url]?[state.proxyName];
   });
 }
@@ -965,16 +988,16 @@ OverrideData? getProfileOverrideData(Ref ref, String profileId) {
 }
 
 @riverpod
-VM2? layoutChange(Ref ref) {
+({double a, TextScale b})? layoutChange(Ref ref) {
   final viewWidth = ref.watch(viewWidthProvider);
   final textScale = ref.watch(
     themeSettingProvider.select((state) => state.textScale),
   );
-  return VM2(a: viewWidth, b: textScale);
+  return (a: viewWidth, b: textScale);
 }
 
 @riverpod
-VM2<int, bool> checkIp(Ref ref) {
+({int a, bool b}) checkIp(Ref ref) {
   final checkIpNum = ref.watch(checkIpNumProvider);
   final containsDetection = ref.watch(
     dashboardStateProvider.select(
@@ -982,11 +1005,11 @@ VM2<int, bool> checkIp(Ref ref) {
           state.dashboardWidgets.contains(DashboardWidget.networkDetection),
     ),
   );
-  return VM2(a: checkIpNum, b: containsDetection);
+  return (a: checkIpNum, b: containsDetection);
 }
 
 @riverpod
-VM2<int, bool> checkMediaUnlock(Ref ref) {
+({int a, bool b}) checkMediaUnlock(Ref ref) {
   final checkIpNum = ref.watch(checkIpNumProvider);
   final containsMediaUnlock = ref.watch(
     dashboardStateProvider.select(
@@ -995,10 +1018,10 @@ VM2<int, bool> checkMediaUnlock(Ref ref) {
           state.dashboardWidgets.contains(DashboardWidget.mediaUnlockSmall),
     ),
   );
-  return VM2(a: checkIpNum, b: containsMediaUnlock);
+  return (a: checkIpNum, b: containsMediaUnlock);
 }
 
-@riverpod
+@Riverpod(keepAlive: true)
 ColorScheme genColorScheme(
   Ref ref,
   Brightness brightness, {
@@ -1007,7 +1030,7 @@ ColorScheme genColorScheme(
 }) {
   final vm2 = ref.watch(
     themeSettingProvider.select(
-      (state) => VM2(a: state.primaryColor, b: state.schemeVariant),
+      (state) => (a: state.primaryColor, b: state.schemeVariant),
     ),
   );
   if (color == null && (ignoreConfig == true || vm2.a == null)) {
@@ -1060,7 +1083,8 @@ bool currentProfileScriptActive(Ref ref) {
 }
 
 @riverpod
-VM4<String?, String?, String?, bool> needSetup(Ref ref) {
+({String? a, String? b, String? c, bool d, String e, String f, String g})
+needSetup(Ref ref) {
   final profileId = ref.watch(currentProfileIdProvider);
   final runsManagedScript = ref.watch(
     currentProfileProvider.select(
@@ -1072,12 +1096,18 @@ VM4<String?, String?, String?, bool> needSetup(Ref ref) {
       ? ref.watch(
           managedSettingProvider.select(
             (state) =>
-                '${ManagedScript.version(state)}:${state.options}:${state.routes}:${state.order}',
+                '${ManagedScript.version(state)}:${state.options}:${state.routes}:${state.order}:${state.regions}:${state.customRegions}',
           ),
         )
       : script == null
       ? null
       : '${script.id}:${script.digest}';
+  final managed = ref.watch(
+    currentProfileProvider.select((profile) => profile?.isManaged ?? false),
+  );
+  final sharedRules = managed
+      ? ref.watch(managedSettingProvider.select((state) => state.rules))
+      : const <Rule>[];
   final loopbackPorts =
       ref.watch(vpnSettingProvider.select((state) => state.loopbackProtection))
       ? ref.watch(patchClashConfigProvider.select((state) => state.listenPorts))
@@ -1085,7 +1115,30 @@ VM4<String?, String?, String?, bool> needSetup(Ref ref) {
   final ipv6 = ref.watch(
     patchClashConfigProvider.select((state) => state.ipv6),
   );
-  return VM4(a: profileId, b: scriptDigest, c: loopbackPorts, d: ipv6);
+  final interfaceName = ref.watch(
+    patchClashConfigProvider.select((state) => state.interfaceName),
+  );
+  final nodes = profileId == null
+      ? ''
+      : ref.watch(
+          nodesProvider.select(
+            (state) => jsonEncode(state.patchOf(profileId, managed: managed)),
+          ),
+        );
+  final hosts = jsonEncode(
+    ref.watch(patchClashConfigProvider.select((state) => state.hosts)),
+  );
+  return (
+    a: profileId,
+    b: sharedRules.isEmpty
+        ? scriptDigest
+        : '$scriptDigest:${[for (final rule in sharedRules) rule.value]}',
+    c: loopbackPorts,
+    d: ipv6,
+    e: interfaceName,
+    f: nodes,
+    g: hosts,
+  );
 }
 
 @riverpod

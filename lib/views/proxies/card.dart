@@ -3,7 +3,10 @@ import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/providers/providers.dart';
 import 'package:bett_box/state.dart';
+import 'package:bett_box/views/proxies/actions.dart';
 import 'package:bett_box/views/proxies/common.dart';
+import 'package:bett_box/views/proxies/list.dart';
+import 'package:bett_box/views/proxies/tab.dart';
 import 'package:bett_box/widgets/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -106,7 +109,7 @@ class ProxyDelayText extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onTap: _handleTestCurrentDelay,
                 child: Icon(
-                  Icons.bolt,
+                  context.resolveIcon(Icons.bolt),
                   size: labelSmallHeight,
                   color: context.colorScheme.onSurfaceVariant,
                 ),
@@ -118,6 +121,7 @@ class ProxyDelayText extends StatelessWidget {
             delay > 0 ? '$delay ms' : 'Timeout',
             style: context.textTheme.labelSmall?.copyWith(
               overflow: TextOverflow.ellipsis,
+              fontWeight: FontWeight.w600,
               color: utils.getDelayColor(delay),
             ),
           );
@@ -184,9 +188,8 @@ class ProxyCard extends StatelessWidget {
 
   bool _isSelectedProxy(WidgetRef ref) {
     return ref.watch(
-      getSelectedProxyNameProvider(
-        groupName,
-      ).select((name) => name == proxy.name),
+      getSelectedProxyNameProvider(groupName)
+          .select((name) => name == proxy.name),
     );
   }
 
@@ -285,14 +288,48 @@ class ProxyCard extends StatelessWidget {
     globalState.showNotifier(appLocalizations.notSelectedTip);
   }
 
+  bool get _hasActions {
+    return switch (proxy.name.toUpperCase()) {
+      'REJECT' || 'REJECT-DROP' || 'PASS' => false,
+      _ => proxy.type.toUpperCase() != 'REMATCH',
+    };
+  }
+
+  VoidCallback? _groupLocatorOf(BuildContext context) {
+    final tabView = context.findAncestorStateOfType<ProxiesTabViewState>();
+    if (tabView != null) return tabView.groupLocator(proxy.name);
+    return context
+        .findAncestorStateOfType<ProxiesListViewState>()
+        ?.groupLocator(proxy.name);
+  }
+
+  void _openActions(BuildContext context, WidgetRef ref, {Offset? position}) {
+    showProxyActions(
+      context,
+      groupName: groupName,
+      groupType: groupType,
+      proxy: proxy,
+      testUrl: testUrl,
+      locked:
+          groupType.isComputedSelected &&
+          ref.read(getProxyNameProvider(groupName)) == proxy.name,
+      coreRunning: ref.read(runTimeProvider) != null,
+      proxyGroup: ref.read(groupsProvider).getGroup(proxy.name),
+      proxyGroupSelected: ref.read(selectedMapProvider)[proxy.name] ?? '',
+      onLocateGroup: _groupLocatorOf(context),
+      position: position,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final delayText = ProxyDelayText(proxy: proxy, testUrl: testUrl);
     final nameTextWidget = _buildProxyNameText(context);
     final footerWidget = _buildFooter(context, delayText);
     return Consumer(
-      builder: (_, ref, _) {
+      builder: (context, ref, _) {
         final isSelected = _isSelectedProxy(ref);
+        final hasActions = _hasActions;
         final isComputedMatch =
             groupType.isComputedSelected && _isComputedMatch(ref);
         final proxyNameWidget = _buildProxyNameWithIcon(
@@ -300,14 +337,15 @@ class ProxyCard extends StatelessWidget {
           nameWidget: nameTextWidget,
           showComputedMark: isComputedMatch,
         );
-        return Stack(
+        final card = Stack(
           children: [
             CommonCard(
+              radius: 20.0,
+              subtle: true,
               elevated: false,
               clipBehavior: Clip.none,
-              onPressed: () {
-                _changeProxy(ref);
-              },
+              onPressed: () => _changeProxy(ref),
+              onLongPress: hasActions ? () => _openActions(context, ref) : null,
               isSelected: isSelected,
               child: Container(
                 alignment: Alignment.centerLeft,
@@ -327,6 +365,12 @@ class ProxyCard extends StatelessWidget {
                 child: _ProxyComputedMarkIcon(),
               ),
           ],
+        );
+        if (!hasActions) return card;
+        return GestureDetector(
+          onSecondaryTapUp: (details) =>
+              _openActions(context, ref, position: details.globalPosition),
+          child: card,
         );
       },
     );
@@ -389,7 +433,7 @@ class _ProxyComputedMarkIcon extends StatelessWidget {
           color: colorScheme.secondaryContainer,
         ),
         child: Icon(
-          Icons.lock_outline,
+          context.resolveIcon(Icons.lock_outline),
           size: 18,
           color: colorScheme.onSecondaryContainer,
         ),

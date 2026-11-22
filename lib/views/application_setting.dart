@@ -222,23 +222,19 @@ class _StartSwitchDialogState extends State<_StartSwitchDialog> {
             style: context.textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
-          SegmentedButton<StartSwitchStyle>(
-            segments: [
-              ButtonSegment(
+          SegmentButtonGroup<StartSwitchStyle>(
+            options: [
+              SegmentOption(
                 value: StartSwitchStyle.tonal,
-                label: Text(appLocalizations.startSwitchTonal),
+                label: appLocalizations.startSwitchTonal,
               ),
-              ButtonSegment(
+              SegmentOption(
                 value: StartSwitchStyle.outlined,
-                label: Text(appLocalizations.startSwitchOutlined),
+                label: appLocalizations.startSwitchOutlined,
               ),
             ],
-            selected: {_style},
-            showSelectedIcon: false,
-            expandedInsets: EdgeInsets.zero,
-            onSelectionChanged: (selection) {
-              setState(() => _style = selection.first);
-            },
+            selected: _style,
+            onSelected: (style) => setState(() => _style = style),
           ),
           const SizedBox(height: 20),
           Text(
@@ -322,9 +318,26 @@ class ShowStartSwitchItem extends ConsumerWidget {
       delegate: SwitchDelegate(
         value: showStartSwitch,
         onChanged: (value) {
-          ref
-              .read(appSettingProvider.notifier)
-              .updateState((state) => state.copyWith(showStartSwitch: value));
+          ref.read(appSettingProvider.notifier).updateState((state) {
+            final widgets = system.isAndroid
+                ? state.mobileDashboardWidgets
+                : state.desktopDashboardWidgets;
+            if (value || widgets.contains(DashboardWidget.startButton)) {
+              return state.copyWith(showStartSwitch: value);
+            }
+            final next = [...widgets, DashboardWidget.startButton];
+            return system.isAndroid
+                ? state.copyWith(
+                    showStartSwitch: false,
+                    mobileDashboardWidgets: next,
+                    dashboardWidgets: next,
+                  )
+                : state.copyWith(
+                    showStartSwitch: false,
+                    desktopDashboardWidgets: next,
+                    dashboardWidgets: next,
+                  );
+          });
         },
       ),
     );
@@ -393,27 +406,23 @@ class _SidebarFlyoutDialogState extends State<_SidebarFlyoutDialog> {
             style: context.textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
-          SegmentedButton<SidebarFlyoutDelay>(
-            segments: [
-              ButtonSegment(
+          SegmentButtonGroup<SidebarFlyoutDelay>(
+            options: [
+              SegmentOption(
                 value: SidebarFlyoutDelay.fast,
-                label: Text(appLocalizations.fast),
+                label: appLocalizations.fast,
               ),
-              ButtonSegment(
+              SegmentOption(
                 value: SidebarFlyoutDelay.standard,
-                label: Text(appLocalizations.standard),
+                label: appLocalizations.standard,
               ),
-              ButtonSegment(
+              SegmentOption(
                 value: SidebarFlyoutDelay.slow,
-                label: Text(appLocalizations.slow),
+                label: appLocalizations.slow,
               ),
             ],
-            selected: {_delay},
-            showSelectedIcon: false,
-            expandedInsets: EdgeInsets.zero,
-            onSelectionChanged: (selection) {
-              setState(() => _delay = selection.first);
-            },
+            selected: _delay,
+            onSelected: (delay) => setState(() => _delay = delay),
           ),
           const SizedBox(height: 12),
           Row(
@@ -585,11 +594,39 @@ class AutoCheckUpdateItem extends ConsumerWidget {
   }
 }
 
-class ApplicationSettingView extends StatelessWidget {
+class AutoDownloadUpdateItem extends ConsumerWidget {
+  const AutoDownloadUpdateItem({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final autoDownloadUpdate = ref.watch(
+      appSettingProvider.select((state) => state.autoDownloadUpdate),
+    );
+    return ListItem.switchItem(
+      title: Text(appLocalizations.autoDownloadUpdate),
+      subtitle: Text(appLocalizations.autoDownloadUpdateDesc),
+      delegate: SwitchDelegate(
+        value: autoDownloadUpdate,
+        onChanged: (bool value) {
+          ref
+              .read(appSettingProvider.notifier)
+              .updateState(
+                (state) => state.copyWith(autoDownloadUpdate: value),
+              );
+        },
+      ),
+    );
+  }
+}
+
+class ApplicationSettingView extends ConsumerWidget {
   const ApplicationSettingView({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final autoCheckUpdate = ref.watch(
+      appSettingProvider.select((state) => state.autoCheckUpdate),
+    );
     List<Widget> items = [
       AutoLaunchItem(),
       if (system.isDesktop) ...[SilentLaunchItem()],
@@ -604,6 +641,8 @@ class ApplicationSettingView extends StatelessWidget {
       if (system.isMacOS) const KeepDockIconItem(),
       UsageItem(),
       AutoCheckUpdateItem(),
+      if (autoCheckUpdate && appUpdater.isSupported)
+        const AutoDownloadUpdateItem(),
     ];
     return generateListView(generateSection(items: items));
   }

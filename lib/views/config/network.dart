@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
@@ -7,24 +9,26 @@ import 'package:bett_box/widgets/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+bool showVpnRestartTip(WidgetRef ref) {
+  if (!system.isAndroid) return false;
+  final isVpnEnabled = ref.read(vpnSettingProvider).enable;
+  final isCoreRunning = ref.read(runTimeProvider) != null;
+  if (!isVpnEnabled || !isCoreRunning) return false;
+  globalState.showNotifier(
+    appLocalizations.vpnTip,
+    actionLabel: appLocalizations.restart,
+    showCountdown: true,
+    onAction: () async {
+      await globalState.appController.restartCore();
+      globalState.showNotifier(appLocalizations.success);
+    },
+  );
+  return true;
+}
+
 Future<void> _handleNetworkConfigChange(WidgetRef ref) async {
-  if (system.isAndroid) {
-    final isVpnEnabled = ref.read(vpnSettingProvider).enable;
-    final isCoreRunning = ref.read(runTimeProvider) != null;
-    if (isVpnEnabled && isCoreRunning) {
-      globalState.showNotifier(
-        appLocalizations.vpnTip,
-        actionLabel: appLocalizations.restart,
-        showCountdown: true,
-        onAction: () async {
-          await globalState.appController.restartCore();
-          globalState.showNotifier(appLocalizations.success);
-        },
-      );
-      return;
-    }
-  }
-  globalState.appController.updateClashConfig();
+  if (showVpnRestartTip(ref)) return;
+  unawaited(globalState.appController.updateClashConfig());
 }
 
 class VPNItem extends ConsumerWidget {
@@ -305,6 +309,52 @@ class TunStackItem extends ConsumerWidget {
   }
 }
 
+class NetworkInterfaceItem extends ConsumerWidget {
+  const NetworkInterfaceItem({super.key});
+
+  @override
+  Widget build(BuildContext context, ref) {
+    final interfaceName = ref.watch(
+      patchClashConfigProvider.select((state) => state.interfaceName),
+    );
+
+    return ListItem(
+      title: Text(appLocalizations.networkInterface),
+      subtitle: Text(
+        interfaceName.isEmpty ? appLocalizations.auto : interfaceName,
+      ),
+      onTap: () async {
+        final interfaces = await utils.getNetworkInterfaces();
+        if (!context.mounted) return;
+        final addresses = {
+          for (final item in interfaces) item.name: item.addresses.join(', '),
+        };
+        final options = [
+          '',
+          if (interfaceName.isNotEmpty && !addresses.containsKey(interfaceName))
+            interfaceName,
+          ...addresses.keys,
+        ];
+        final value = await globalState.showAdaptiveSheet<String>(
+          nested: isInBottomSheet(context),
+          child: OptionsDialog<String>(
+            title: appLocalizations.networkInterface,
+            options: options,
+            value: interfaceName,
+            textBuilder: (value) =>
+                value.isEmpty ? appLocalizations.auto : value,
+            subtitleBuilder: (value) => addresses[value],
+          ),
+        );
+        if (value == null || value == interfaceName) return;
+        ref
+            .read(patchClashConfigProvider.notifier)
+            .updateState((state) => state.copyWith(interfaceName: value));
+      },
+    );
+  }
+}
+
 class MtuItem extends ConsumerWidget {
   const MtuItem({super.key});
 
@@ -511,7 +561,7 @@ class BypassDomainItem extends StatelessWidget {
                   await _handleNetworkConfigChange(ref);
                 },
                 tooltip: appLocalizations.reset,
-                icon: const Icon(Icons.replay),
+                icon: const AppIcon(Icons.replay),
               );
             },
           ),
@@ -573,7 +623,7 @@ class BypassPrivateRouteItem extends ConsumerWidget {
                   await _handleNetworkConfigChange(ref);
                 },
                 tooltip: appLocalizations.reset,
-                icon: const Icon(Icons.replay),
+                icon: const AppIcon(Icons.replay),
               );
             },
           ),
@@ -626,7 +676,7 @@ class BypassPrivateRouteItem extends ConsumerWidget {
                 onTap: () => _showEditPage(context, ref),
                 child: Padding(
                   padding: const EdgeInsets.all(7),
-                  child: Icon(
+                  child: AppIcon(
                     Icons.settings_outlined,
                     size: 18,
                     color: context.colorScheme.onSurfaceVariant,
@@ -685,7 +735,8 @@ class NetworkListView extends ConsumerWidget {
           const IcmpForwardingItem(),
           if (system.isDesktop) const DnsHijackItem(),
           const EndpointIndependentNatItem(),
-          if (!AppIdentity.isLite) const TunStackItem(),
+          if (system.isDesktop) const NetworkInterfaceItem(),
+          if (AppIdentity.isStandard) const TunStackItem(),
           const MtuItem(),
           if (system.isDesktop) const ProfileSwitchModeItem(),
           const BypassPrivateRouteItem(),

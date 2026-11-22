@@ -1,5 +1,6 @@
 // ignore_for_file: avoid_print
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -133,8 +134,8 @@ class Build {
     return 'gcc';
   }
 
-  static String getTags(BuildItem buildItem, {bool lite = false}) {
-    if (lite) {
+  static String getTags(BuildItem buildItem, {bool standard = false}) {
+    if (!standard) {
       return 'no_easytier,no_tailscale,no_zerotier,no_fake_tcp,with_low_memory';
     }
     final baseTags = 'with_gvisor';
@@ -185,14 +186,52 @@ class Build {
     return digest.toString();
   }
 
+  static Future<String> resolveCoreVersion({String? explicitVersion}) async {
+    final explicit = explicitVersion?.trim();
+    if (explicit != null && explicit.isNotEmpty) {
+      return explicit;
+    }
+
+    final envVersion = Platform.environment['CORE_VERSION']?.trim();
+    if (envVersion != null && envVersion.isNotEmpty) {
+      return envVersion;
+    }
+
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 3);
+      final request = await client.getUrl(
+        Uri.parse('https://github.com/MetaCubeX/mihomo/releases/latest'),
+      );
+      request.followRedirects = false;
+      final response = await request.close().timeout(
+        const Duration(seconds: 3),
+      );
+      final location = response.headers.value(HttpHeaders.locationHeader);
+      client.close(force: true);
+      if (location != null) {
+        final tag = Uri.parse(location).pathSegments.last.trim();
+        if (tag.isNotEmpty) {
+          return tag;
+        }
+      }
+    } catch (_) {}
+
+    return 'alpha';
+  }
+
   static Future<List<String>> buildCore({
     required Mode mode,
     required Target target,
     Arch? arch,
     bool compatible = false,
-    bool lite = false,
+    bool standard = false,
+    String? coreVersion,
   }) async {
     final isLib = mode == Mode.lib;
+    final resolvedVersion = await resolveCoreVersion(
+      explicitVersion: coreVersion,
+    );
 
     final items = buildItems.where((element) {
       return element.target == target &&
@@ -234,7 +273,7 @@ class Build {
         env['CGO_ENABLED'] = '0';
       }
 
-      final buildTags = getTags(item, lite: lite);
+      final buildTags = getTags(item, standard: standard);
 
       await exec(
         ['go', 'mod', 'tidy'],
@@ -243,11 +282,20 @@ class Build {
         workingDirectory: _coreDir,
       );
 
+      final ldflags = [
+        '-w',
+        '-s',
+        '-X github.com/metacubex/mihomo/constant.Version=$resolvedVersion',
+        if (item.target == Target.android &&
+            (item.arch == Arch.arm64 || item.arch == Arch.amd64))
+          '-extldflags "-Wl,-z,max-page-size=16384"',
+      ].join(' ');
+
       final execLines = [
         'go',
         'build',
         '-trimpath',
-        '-ldflags=-w -s${item.target == Target.android && (item.arch == Arch.arm64 || item.arch == Arch.amd64) ? ' -extldflags "-Wl,-z,max-page-size=16384"' : ''}',
+        '-ldflags=$ldflags',
         '-tags=$buildTags',
         if (isLib) '-buildmode=c-shared',
         '-o',
@@ -368,23 +416,23 @@ class Build {
 
   static const List<AssetDownloadItem> assetDownloadItems = [
     AssetDownloadItem(
-      url:
-          'https://github.com/appshubcc/bett-rules/releases/download/latest/geosite.dat',
+      url: 'https://github.com/appshubcc/bett-rules/releases/download/latest/geosite.dat',
       fileName: 'GeoSite.dat',
     ),
     AssetDownloadItem(
-      url:
-          'https://github.com/appshubcc/bett-rules/releases/download/latest/geoip.metadb',
+      url: 'https://github.com/appshubcc/bett-rules/releases/download/latest/geoip.metadb',
       fileName: 'geoip.metadb',
     ),
     AssetDownloadItem(
-      url:
-          'https://github.com/appshubcc/bett-rules/releases/download/latest/GeoLite2-ASN-lite.mmdb',
+      url: 'https://github.com/appshubcc/bett-rules/releases/download/latest/GeoLite2-ASN-lite.mmdb',
       fileName: 'ASN.mmdb',
     ),
     AssetDownloadItem(
-      url:
-          'https://github.com/Zephyruso/zashboard/releases/download/v3.29.1/dist-no-fonts.zip',
+      url: 'https://github.com/appshubcc/bett-rules/releases/download/latest/BundleMRS.7z',
+      fileName: 'BundleMRS.7z',
+    ),
+    AssetDownloadItem(
+      url: 'https://github.com/Zephyruso/zashboard/releases/download/v3.29.1/dist-no-fonts.zip',
       fileName: 'zash.zip',
     ),
   ];
@@ -422,6 +470,65 @@ class Build {
         final ageHours = now.difference(targetFile.lastModifiedSync()).inHours;
         print('${item.fileName} is up to date (${ageHours}h < 48h).');
       }
+    }
+    await _syncTelegramCidrs(force: force, maxAge: maxAge);
+  }
+
+  static const _telegramCidrsUrl =
+      'https://raw.githubusercontent.com/appshubcc/bett-rules/meta/geo/geoip/telegram.list';
+
+  static Future<void> _syncTelegramCidrs({
+    required bool force,
+    required Duration maxAge,
+  }) async {
+    final file = File(join(current, 'lib', 'common', 'telegram_cidrs.dart'));
+    if (!force && file.existsSync()) {
+      final age = DateTime.now().difference(file.lastModifiedSync());
+      if (age < maxAge) {
+        print('telegram_cidrs.dart is up to date (${age.inHours}h < 48h).');
+        return;
+      }
+    }
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 30);
+    try {
+      final request = await client.getUrl(Uri.parse(_telegramCidrsUrl));
+      final response = await request.close();
+      if (response.statusCode != HttpStatus.ok) {
+        throw HttpException('status ${response.statusCode}');
+      }
+      final text = await response.transform(utf8.decoder).join();
+      final cidrs = [
+        for (final line in const LineSplitter().convert(text))
+          if (line.trim() case final cidr when cidr.isNotEmpty) cidr,
+      ];
+      final valid = cidrs.every((cidr) {
+        final parts = cidr.split('/');
+        final prefix = parts.length == 2 ? int.tryParse(parts.last) : null;
+        final address = InternetAddress.tryParse(parts.first);
+        return address != null &&
+            prefix != null &&
+            prefix >= 0 &&
+            prefix <= address.rawAddress.length * 8;
+      });
+      if (cidrs.isEmpty || !valid) throw const FormatException('invalid list');
+      final content = [
+        'const telegramCidrs = [',
+        for (final cidr in cidrs) "  '$cidr',",
+        '];',
+        '',
+      ].join('\n');
+      if (file.existsSync() && file.readAsStringSync() == content) {
+        file.setLastModifiedSync(DateTime.now());
+        print('telegram_cidrs.dart is up to date (${cidrs.length} entries).');
+        return;
+      }
+      file.writeAsStringSync(content);
+      print('telegram_cidrs.dart updated (${cidrs.length} entries).');
+    } catch (e) {
+      print('Skip updating telegram_cidrs.dart: $e');
+    } finally {
+      client.close();
     }
   }
 
@@ -510,7 +617,7 @@ Future<void> _bumpManagedScriptVersion() async {
   print('managed.js version $currentVersion -> $version');
 }
 
-class BuildCommand extends Command {
+class BuildCommand extends Command<void> {
   Target target;
 
   BuildCommand({required this.target}) {
@@ -542,8 +649,7 @@ class BuildCommand extends Command {
     );
     argParser.addOption(
       'core-hash',
-      help:
-          'SHA256 hash of the (signed) core binary, used when --out=helper to embed the correct TOKEN',
+      help: 'SHA256 hash of the (signed) core binary, used when --out=helper to embed the correct TOKEN',
     );
     argParser.addOption(
       'env',
@@ -559,13 +665,14 @@ class BuildCommand extends Command {
       'ensure',
       help: 'Skip build if output artifact already exists',
     );
-    if (target == Target.android) {
-      argParser.addFlag(
-        'lite',
-        help:
-            'Build the Lite variant without easytier, tailscale, zerotier, fake-tcp and gVisor',
-      );
-    }
+    argParser.addFlag(
+      'standard',
+      help: 'Build the Standard variant with easytier, tailscale, zerotier, fake-tcp and gVisor',
+    );
+    argParser.addOption(
+      'core-version',
+      help: 'Version string injected into the core binary',
+    );
   }
 
   @override
@@ -627,7 +734,8 @@ class BuildCommand extends Command {
     String args = '',
     required String env,
     required String suffix,
-    bool lite = false,
+    bool standard = false,
+    Map<String, String>? environment,
   }) async {
     final sentryDsn = Platform.environment['SENTRY_DSN'] ?? '';
     final sentryArg = sentryDsn.isNotEmpty
@@ -643,13 +751,16 @@ class BuildCommand extends Command {
         : '';
 
     final appDevArg = Build.isDev ? ' --build-dart-define=APP_DEV=true' : '';
-    final appLiteArg = lite ? ' --build-dart-define=APP_LITE=true' : '';
+    final appStandardArg = standard
+        ? ' --build-dart-define=APP_STANDARD=true'
+        : '';
 
     await Build.getDistributor();
     await Build.exec(
       name: name,
+      environment: environment,
       Build.getExecutable(
-        'flutter_distributor package --skip-clean --platform ${target.name} --targets $targets --flutter-build-args=verbose$args$sentryArg$suffixArg$ipinfoArg --build-dart-define=APP_ENV=$env$appDevArg$appLiteArg',
+        'flutter_distributor package --skip-clean --platform ${target.name} --targets $targets --flutter-build-args=verbose$args$sentryArg$suffixArg$ipinfoArg --build-dart-define=APP_ENV=$env$appDevArg$appStandardArg',
       ),
     );
   }
@@ -735,7 +846,7 @@ class BuildCommand extends Command {
     return _latestModified(sources);
   }
 
-  bool _outputsAreFresh(Arch? arch, bool lite) {
+  bool _outputsAreFresh(Arch? arch, bool standard) {
     final outputs = _expectedOutputs(arch);
     if (outputs.isEmpty || !outputs.every((path) => File(path).existsSync())) {
       return false;
@@ -749,7 +860,8 @@ class BuildCommand extends Command {
         .every((item) {
           final marker = File(Build.tagsMarkerPath(item));
           return marker.existsSync() &&
-              marker.readAsStringSync() == Build.getTags(item, lite: lite);
+              marker.readAsStringSync() ==
+                  Build.getTags(item, standard: standard);
         });
     if (!tagsMatch) {
       return false;
@@ -769,14 +881,15 @@ class BuildCommand extends Command {
   @override
   Future<void> run() async {
     await execute(
-      archName: argResults?['arch'],
-      out: argResults?['out'],
-      env: argResults?['env'] ?? 'pre',
-      dev: argResults?['dev'] ?? false,
-      ensure: argResults?['ensure'] ?? false,
-      compatible: argResults?['compatible'] ?? false,
+      archName: argResults?['arch'] as String?,
+      out: argResults?['out'] as String?,
+      env: argResults?['env'] as String? ?? 'pre',
+      dev: argResults?['dev'] as bool? ?? false,
+      ensure: argResults?['ensure'] as bool? ?? false,
+      compatible: argResults?['compatible'] as bool? ?? false,
       coreHash: argResults?['core-hash'] as String?,
-      lite: target == Target.android && (argResults?['lite'] ?? false),
+      standard: argResults?['standard'] as bool? ?? false,
+      coreVersion: argResults?['core-version'] as String?,
     );
   }
 
@@ -788,7 +901,8 @@ class BuildCommand extends Command {
     bool ensure = false,
     bool compatible = false,
     String? coreHash,
-    bool lite = false,
+    bool standard = false,
+    String? coreVersion,
   }) async {
     if (compatible && target != Target.windows && target != Target.linux) {
       throw '--compatible is only supported for windows and linux';
@@ -822,7 +936,7 @@ class BuildCommand extends Command {
     }
 
     if (ensure && actualOut != 'app') {
-      if (_outputsAreFresh(arch, lite)) {
+      if (_outputsAreFresh(arch, standard)) {
         print('${target.name} output already exists');
         return;
       }
@@ -833,7 +947,8 @@ class BuildCommand extends Command {
       arch: arch,
       mode: mode,
       compatible: compatible,
-      lite: lite,
+      standard: standard,
+      coreVersion: coreVersion,
     );
 
     if (actualOut == 'core-only') {
@@ -861,7 +976,11 @@ class BuildCommand extends Command {
 
     await _bumpManagedScriptVersion();
 
-    final String desc = compatible ? '$archName-compatible' : (archName ?? '');
+    final String desc = [
+      if (archName != null && archName.isNotEmpty) archName,
+      if (compatible) 'compatible',
+      if (standard && target != Target.android) 'standard',
+    ].join('-');
 
     String appAssetSuffix = '';
     switch (target) {
@@ -874,7 +993,7 @@ class BuildCommand extends Command {
       case Target.linux:
         break;
       case Target.android:
-        final variant = lite ? 'android-lite' : 'android';
+        final variant = standard ? 'android-standard' : 'android';
         if (archName == 'universal') {
           appAssetSuffix = '$variant-universal.apk';
         } else if (arch == Arch.arm64) {
@@ -892,13 +1011,14 @@ class BuildCommand extends Command {
         final token = target != Target.android
             ? await Build.calcSha256(corePaths.first)
             : null;
-        Build.buildHelper(target, token!);
-        _buildDistributor(
+        unawaited(Build.buildHelper(target, token!));
+        await _buildDistributor(
           target: target,
           targets: 'exe',
           args: ' --description $desc --build-dart-define=CORE_SHA256=$token',
           env: env,
           suffix: appAssetSuffix,
+          standard: standard,
         );
         return;
       case Target.linux:
@@ -920,6 +1040,7 @@ class BuildCommand extends Command {
             args: ' --description $desc --build-target-platform $defaultTarget',
             env: env,
             suffix: currentSuffix,
+            standard: standard,
           );
         }
         return;
@@ -936,16 +1057,18 @@ class BuildCommand extends Command {
             .toList();
 
         final buildArgs = archName == 'universal'
-            ? ' --build-target-platform ${defaultTargets.join(",")} --description ${lite ? 'lite-universal' : 'universal'}'
-            : ',split-per-abi --build-target-platform ${defaultTargets.join(",")}${lite ? ' --description lite' : ''}';
+            ? ' --build-target-platform ${defaultTargets.join(",")} --description ${standard ? 'standard-universal' : 'universal'}'
+            : ',split-per-abi --build-target-platform ${defaultTargets.join(",")}${standard ? ' --description standard' : ''}';
 
-        _buildDistributor(
-          target: target,
-          targets: 'apk',
-          args: buildArgs,
-          env: env,
-          suffix: appAssetSuffix,
-          lite: lite,
+        unawaited(
+          _buildDistributor(
+            target: target,
+            targets: 'apk',
+            args: buildArgs,
+            env: env,
+            suffix: appAssetSuffix,
+            standard: standard,
+          ),
         );
         return;
       case Target.macos:
@@ -959,24 +1082,41 @@ class BuildCommand extends Command {
           Build.getExecutable('pod install --repo-update'),
           workingDirectory: 'macos',
         );
-        await _buildDistributor(
-          target: target,
-          targets: 'dmg',
-          args: ' --description $desc',
-          env: env,
-          suffix: appAssetSuffix,
-        );
+        final infoPlist = File('macos/Runner/Info.plist');
+        final infoPlistContent = await infoPlist.readAsString();
+        if (arch == Arch.amd64) {
+          await infoPlist.writeAsString(
+            infoPlistContent.replaceFirst(
+              '<key>FLTEnableImpeller</key>\n\t<true/>',
+              '<key>FLTEnableImpeller</key>\n\t<false/>',
+            ),
+          );
+        }
+        try {
+          await _buildDistributor(
+            target: target,
+            targets: 'dmg',
+            args: ' --description $desc',
+            env: env,
+            suffix: appAssetSuffix,
+            standard: standard,
+            environment: arch == Arch.arm64
+                ? {'FLUTTER_MACOS_ARM64_ONLY': 'true'}
+                : null,
+          );
+        } finally {
+          await infoPlist.writeAsString(infoPlistContent);
+        }
         return;
     }
   }
 }
 
-class AutoBuildCommand extends Command {
+class AutoBuildCommand extends Command<void> {
   AutoBuildCommand() {
     argParser.addOption(
       'device-id',
-      help:
-          'Target Flutter device ID (e.g. from \${command:flutter.getSelectedDeviceId})',
+      help: 'Target Flutter device ID (e.g. from \${command:flutter.getSelectedDeviceId})',
     );
     argParser.addOption(
       'arch',
@@ -1006,6 +1146,14 @@ class AutoBuildCommand extends Command {
       'ensure',
       help: 'Skip build if output artifact already exists',
     );
+    argParser.addFlag(
+      'standard',
+      help: 'Build the Standard variant with easytier, tailscale, zerotier, fake-tcp and gVisor',
+    );
+    argParser.addOption(
+      'core-version',
+      help: 'Version string injected into the core binary',
+    );
   }
 
   @override
@@ -1018,7 +1166,7 @@ class AutoBuildCommand extends Command {
   Future<void> run() async {
     final optDeviceId = argResults?['device-id']?.toString().trim() ?? '';
     final rawDeviceId = optDeviceId.startsWith('-') ? '' : optDeviceId;
-    final String? explicitArch = argResults?['arch'];
+    final explicitArch = argResults?['arch'] as String?;
 
     Target? target;
     String? archName = explicitArch;
@@ -1107,17 +1255,19 @@ class AutoBuildCommand extends Command {
     final cmd = BuildCommand(target: target);
     await cmd.execute(
       archName: archName,
-      out: argResults?['out'] ?? 'core',
-      env: argResults?['env'] ?? 'pre',
-      dev: argResults?['dev'] ?? false,
-      ensure: argResults?['ensure'] ?? false,
-      compatible: argResults?['compatible'] ?? false,
+      out: argResults?['out'] as String? ?? 'core',
+      env: argResults?['env'] as String? ?? 'pre',
+      dev: argResults?['dev'] as bool? ?? false,
+      ensure: argResults?['ensure'] as bool? ?? false,
+      compatible: argResults?['compatible'] as bool? ?? false,
       coreHash: argResults?['core-hash'] as String?,
+      standard: argResults?['standard'] as bool? ?? false,
+      coreVersion: argResults?['core-version'] as String?,
     );
   }
 }
 
-class AssetsCommand extends Command {
+class AssetsCommand extends Command<void> {
   AssetsCommand() {
     argParser.addFlag(
       'force',

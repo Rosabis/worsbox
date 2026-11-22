@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/enum/enum.dart';
 import 'package:bett_box/models/models.dart';
@@ -21,33 +23,16 @@ Future<void> showManagedOptions(BuildContext context) async {
   );
 }
 
-Future<void> syncManagedScript(BuildContext context, WidgetRef ref) async {
-  final res = await globalState.showMessage(
-    title: appLocalizations.syncFromUpstream,
-    message: TextSpan(text: appLocalizations.managedSyncTip),
-  );
-  if (res != true || !context.mounted) return;
-  final props = ref.read(managedSettingProvider);
-  final version = await globalState.appController.safeRun(
-    () => ManagedScript.sync(props),
-    needLoading: true,
-    silence: false,
-  );
-  if (version == null || !context.mounted) return;
-  if (version == ManagedScript.version(props)) {
-    context.showNotifier(appLocalizations.managedUpToDate);
-    return;
-  }
-  globalState.appController.updateManagedSetting(
-    (state) => state.copyWith(syncedVersion: version),
-  );
-}
-
 String _targetLabel(String target) =>
     target == _rejectTarget ? appLocalizations.reject : target;
 
 String _searchKey(String value) =>
     value.toLowerCase().replaceAll(_searchKeyPattern, '');
+
+final _sensitiveTagPattern = RegExp(
+  r'porn|hentai|xvideos|xnxx|missav|javdb|jable|mindgeek|onlyfans|category-adult|category-gambling|casino|betting',
+  caseSensitive: false,
+);
 
 String _iconName(String icon) {
   final name = icon.substring(icon.lastIndexOf('/') + 1);
@@ -129,7 +114,7 @@ class _RouteIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final src = url;
-    if (src == null || src.isEmpty) return Icon(Icons.alt_route, size: size);
+    if (src == null || src.isEmpty) return AppIcon(Icons.alt_route, size: size);
     return CommonTargetIcon(src: src, size: size);
   }
 }
@@ -162,11 +147,11 @@ class _ServicePill extends StatelessWidget {
     final textTheme = context.textTheme;
     final tag = this.tag;
     final trailing = removing
-        ? Icon(Icons.remove_circle, size: 16, color: colorScheme.error)
+        ? AppIcon(Icons.remove_circle, size: 16, color: colorScheme.error)
         : !enabled
         ? Text(appLocalizations.disabled, style: textTheme.labelSmall?.toLight)
         : present
-        ? Icon(Icons.check_circle, size: 16, color: colorScheme.primary)
+        ? AppIcon(Icons.check_circle, size: 16, color: colorScheme.primary)
         : tag == null
         ? null
         : Text(
@@ -238,7 +223,7 @@ class _SearchField extends StatelessWidget {
             : TextInputAction.done,
         decoration: InputDecoration(
           hintText: hintText,
-          prefixIcon: const Icon(Icons.search),
+          prefixIcon: const AppIcon(Icons.search),
         ),
       ),
     );
@@ -265,6 +250,10 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
   List<String> _presets = [];
   late Set<String> _removed;
   late List<CustomRoute> _routes;
+  late List<CustomRegion> _customRegions;
+  late List<String>? _enabledRegions;
+  List<String> _regions = [];
+  Map<String, String?> _regionIcons = {};
   List<String> _order = [];
   bool _reordered = false;
   bool _sorting = false;
@@ -275,7 +264,9 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
     super.initState();
     final props = ref.read(managedSettingProvider);
     _routes = props.routes;
+    _customRegions = props.customRegions;
     _removed = props.removed.toSet();
+    _enabledRegions = props.regions;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.afterRouteTransition(_load);
@@ -291,7 +282,7 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
         final script = await ManagedScript.script(
           props.copyWith(routes: const [], order: const []),
         );
-        final catalog = await ManagedScript.catalog(props);
+        final catalog = await ManagedScript.catalog();
         final options = await JavaScriptRuntimeManager.extractScriptOptions(
           script,
         );
@@ -328,6 +319,20 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
       ];
       _options = options;
       _icons = icons;
+      _regions = managedRegions(
+        data.catalog.catalog,
+        _enabledRegions,
+        _customRegions,
+      );
+      _regionIcons = {
+        for (final region in data.catalog.catalog.regions)
+          region.name: routeIconUrl(region.icon),
+        for (final cr in _customRegions)
+          cr.name: routeIconUrl(
+            defaultRouteAliases[cr.name.trim().toLowerCase()] ??
+                defaultRouteAliases[cr.name.trim()],
+          ),
+      };
       _order = _arrange(props.order);
     });
   }
@@ -339,6 +344,7 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
     ],
     customs: [for (final route in _routes) route.name],
     saved: saved,
+    regions: _regions,
   );
 
   void _change(VoidCallback callback) {
@@ -433,6 +439,8 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
         routes: routes,
         order: order,
         removed: removed,
+        regions: _enabledRegions,
+        customRegions: _customRegions,
       ),
     );
     _dirty = false;
@@ -460,11 +468,54 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
       icons: _icons,
       onSave: (values) async {
         if (!mounted) return;
+        if (values.containsKey('禁用内核QUIC流量') ||
+            values.containsKey('屏蔽内核QUIC流量')) {
+          final quic = values['禁用内核QUIC流量'] ?? values['屏蔽内核QUIC流量'] ?? true;
+          ref
+              .read(vpnSettingProvider.notifier)
+              .updateState((state) => state.copyWith(disableQuic: quic));
+        }
         setState(() {
           _options.addAll(values);
+          if (_options.containsKey('屏蔽内核QUIC流量')) {
+            _options['禁用内核QUIC流量'] ??= _options['屏蔽内核QUIC流量']!;
+            _options.remove('屏蔽内核QUIC流量');
+          }
           _persist();
         });
       },
+    );
+  }
+
+  Future<void> _handleOpenRegions(RouteCatalog catalog) async {
+    await showSheet(
+      context: context,
+      builder: (_, type) => _RegionsSheet(
+        type: type,
+        regions: catalog.regions,
+        customRegions: _customRegions,
+        icons: _regionIcons,
+        enabled: _regions,
+        onSave: (enabled, customRegions) {
+          if (!mounted) return;
+          setState(() {
+            _enabledRegions = enabled;
+            _regions = enabled;
+            _customRegions = customRegions;
+            _regionIcons = {
+              for (final region in catalog.regions)
+                region.name: routeIconUrl(region.icon),
+              for (final cr in _customRegions)
+                cr.name: routeIconUrl(
+                  defaultRouteAliases[cr.name.trim().toLowerCase()] ??
+                      defaultRouteAliases[cr.name.trim()],
+                ),
+            };
+            _order = _arrange(_order);
+            _persist();
+          });
+        },
+      ),
     );
   }
 
@@ -501,6 +552,14 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
           for (final item in _routes)
             if (item.id != route?.id) item.name,
         },
+        targets: [
+          for (final target in catalog.catalog.targets)
+            if (_regions.contains(target) ||
+                !catalog.catalog.regions.any((item) => item.name == target))
+              target,
+          for (final cr in _customRegions)
+            if (_regions.contains(cr.name)) cr.name,
+        ],
         onSave: (value) =>
             route == null ? _handleAdded(value) : _handleUpdated(route, value),
         onApply: route == null ? _handleApplied : null,
@@ -514,14 +573,16 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
     BuildContext context,
     RouteCatalogIndex catalog,
     Map<String, CustomRoute> routes,
+    String name,
     int index,
   ) {
-    final name = _order[index];
     final route = routes[name];
     final tile = ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
       leading: _RouteIcon(
-        url: route == null ? _icons[name] : catalog.iconUrlOf(route),
+        url: route == null
+            ? _icons[name] ?? _regionIcons[name]
+            : catalog.iconUrlOf(route),
       ),
       title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: _sorting
@@ -529,7 +590,7 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
               index: index,
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: Icon(
+                child: AppIcon(
                   Icons.drag_handle,
                   color: context.colorScheme.onSurfaceVariant,
                 ),
@@ -565,8 +626,16 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
       );
     }
     final routes = {for (final route in _routes) route.name: route};
+    final items = _sorting
+        ? _order
+        : [
+            for (final name in _order)
+              if (!_regions.contains(name)) name,
+          ];
+    final regions = catalog.catalog.regions;
     return ReorderableListView.builder(
       buildDefaultDragHandles: false,
+      proxyDecorator: proxyDecorator,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       header: _sorting
           ? Padding(
@@ -577,22 +646,62 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
               ),
             )
           : null,
-      footer: _sorting || _others.isEmpty
+      footer: _sorting || (_others.isEmpty && regions.isEmpty)
           ? null
-          : Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: CommonCard(
-                type: CommonCardType.filled,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  leading: const Icon(Icons.settings_outlined),
-                  title: Text(appLocalizations.scriptOtherOptions),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _handleOpenOtherOptions,
-                ),
-              ),
+          : Column(
+              children: [
+                if (regions.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: CommonCard(
+                      type: CommonCardType.filled,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                        ),
+                        leading: const AppIcon(Icons.public),
+                        title: Text(appLocalizations.regionGroups),
+                        subtitle: _regions.isEmpty
+                            ? null
+                            : Text(
+                                _regions.join('、'),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.textTheme.bodySmall?.toLight,
+                              ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${_regions.length}',
+                              style: context.textTheme.labelLarge?.toLight,
+                            ),
+                            const AppIcon(Icons.chevron_right),
+                          ],
+                        ),
+                        onTap: () => _handleOpenRegions(catalog.catalog),
+                      ),
+                    ),
+                  ),
+                if (_others.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: CommonCard(
+                      type: CommonCardType.filled,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                        ),
+                        leading: const AppIcon(Icons.settings_outlined),
+                        title: Text(appLocalizations.scriptOtherOptions),
+                        trailing: const AppIcon(Icons.chevron_right),
+                        onTap: _handleOpenOtherOptions,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-      itemCount: _order.length,
+      itemCount: items.length,
       onReorderItem: (oldIndex, newIndex) => _change(() {
         final order = List.of(_order);
         order.insert(newIndex, order.removeAt(oldIndex));
@@ -600,7 +709,7 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
         _reordered = true;
       }),
       itemBuilder: (context, index) =>
-          _buildItem(context, catalog, routes, index),
+          _buildItem(context, catalog, routes, items[index], index),
     );
   }
 
@@ -616,7 +725,7 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
             ? [
                 IconButton(
                   onPressed: () => setState(() => _sorting = false),
-                  icon: const Icon(Icons.check),
+                  icon: const AppIcon(Icons.check),
                   tooltip: appLocalizations.confirm,
                 ),
               ]
@@ -624,25 +733,327 @@ class _ManagedOptionsSheetState extends ConsumerState<ManagedOptionsSheet> {
                 if (_dirty)
                   IconButton(
                     onPressed: _handleSave,
-                    icon: const Icon(Icons.save),
+                    icon: const AppIcon(Icons.save),
                     tooltip: appLocalizations.save,
                   ),
                 IconButton(
                   onPressed: catalog == null
                       ? null
                       : () => _handleEdit(catalog),
-                  icon: const Icon(Icons.add),
+                  icon: const AppIcon(Icons.add),
                   tooltip: appLocalizations.addRoute,
                 ),
                 IconButton(
                   onPressed: catalog == null
                       ? null
                       : () => setState(() => _sorting = true),
-                  icon: const Icon(Icons.swap_vert),
+                  icon: const AppIcon(Icons.swap_vert),
                   tooltip: appLocalizations.ruleSort,
                 ),
               ],
         body: FadeBox(alignment: Alignment.center, child: _buildBody(context)),
+      ),
+    );
+  }
+}
+
+class _CustomRegionDialog extends StatefulWidget {
+  final CustomRegion? region;
+  final Set<String> existingNames;
+
+  const _CustomRegionDialog({this.region, required this.existingNames});
+
+  @override
+  State<_CustomRegionDialog> createState() => _CustomRegionDialogState();
+}
+
+class _CustomRegionDialogState extends State<_CustomRegionDialog> {
+  late final TextEditingController _nameController = TextEditingController(
+    text: widget.region?.name ?? '',
+  );
+  late final TextEditingController _regexController = TextEditingController(
+    text: widget.region?.regex ?? '',
+  );
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _regexController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    final name = _nameController.text.trim();
+    final regex = _regexController.text.trim();
+    Navigator.of(context).pop(CustomRegion(name: name, regex: regex));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CommonDialog(
+      title: widget.region == null
+          ? appLocalizations.addRegion
+          : appLocalizations.edit,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(appLocalizations.cancel),
+        ),
+        TextButton(onPressed: _submit, child: Text(appLocalizations.confirm)),
+      ],
+      child: Form(
+        key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        child: Wrap(
+          runSpacing: 16,
+          children: [
+            TextFormField(
+              controller: _nameController,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: appLocalizations.regionName,
+              ),
+              validator: (value) {
+                final trimmed = value?.trim() ?? '';
+                if (trimmed.isEmpty) {
+                  return appLocalizations.emptyTip(appLocalizations.regionName);
+                }
+                if (trimmed.contains(',') || trimmed.contains('\n')) {
+                  return appLocalizations.routeNameInvalid;
+                }
+                if (widget.region?.name != trimmed &&
+                    widget.existingNames.contains(trimmed)) {
+                  return appLocalizations.existsTip(
+                    appLocalizations.regionName,
+                  );
+                }
+                return null;
+              },
+            ),
+            TextFormField(
+              controller: _regexController,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                labelText: appLocalizations.regionRegex,
+              ),
+              validator: (value) {
+                final trimmed = value?.trim() ?? '';
+                if (trimmed.isEmpty) {
+                  return appLocalizations.emptyTip(
+                    appLocalizations.regionRegex,
+                  );
+                }
+                try {
+                  RegExp(trimmed);
+                } catch (_) {
+                  return appLocalizations.regexInvalid;
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RegionsSheet extends StatefulWidget {
+  final SheetType type;
+  final List<RouteRegion> regions;
+  final List<CustomRegion> customRegions;
+  final Map<String, String?> icons;
+  final List<String> enabled;
+  final void Function(List<String> enabled, List<CustomRegion> customRegions)
+  onSave;
+
+  const _RegionsSheet({
+    required this.type,
+    required this.regions,
+    this.customRegions = const [],
+    required this.icons,
+    required this.enabled,
+    required this.onSave,
+  });
+
+  @override
+  State<_RegionsSheet> createState() => _RegionsSheetState();
+}
+
+class _RegionsSheetState extends State<_RegionsSheet> {
+  late final Set<String> _enabled = widget.enabled.toSet();
+  late final List<CustomRegion> _customRegions = List.of(widget.customRegions);
+  bool _dirty = false;
+
+  Future<void> _handleSave() async {
+    final allNames = [
+      for (final region in widget.regions) region.name,
+      for (final region in _customRegions) region.name,
+    ];
+    widget.onSave([
+      for (final name in allNames)
+        if (_enabled.contains(name)) name,
+    ], _customRegions);
+    _dirty = false;
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<bool> _confirmDiscard() async {
+    if (!_dirty) return true;
+    return showSaveChangesDialog(onSave: _handleSave);
+  }
+
+  Future<void> _handleAddOrEditCustomRegion([
+    CustomRegion? region,
+    int? index,
+  ]) async {
+    final existingNames = {
+      for (final r in widget.regions) r.name,
+      for (final cr in _customRegions)
+        if (cr != region) cr.name,
+    };
+    final res = await globalState.showCommonDialog<CustomRegion>(
+      child: _CustomRegionDialog(region: region, existingNames: existingNames),
+    );
+    if (res == null) return;
+    setState(() {
+      if (index != null && region != null) {
+        _customRegions[index] = res;
+        if (region.name != res.name) {
+          if (_enabled.remove(region.name)) {
+            _enabled.add(res.name);
+          }
+        }
+      } else {
+        _customRegions.add(res);
+        _enabled.add(res.name);
+      }
+      _dirty = true;
+    });
+  }
+
+  void _handleDeleteCustomRegion(int index) {
+    setState(() {
+      final removed = _customRegions.removeAt(index);
+      _enabled.remove(removed.name);
+      _dirty = true;
+    });
+  }
+
+  String? _customIconUrl(String name) {
+    final alias =
+        defaultRouteAliases[name.trim().toLowerCase()] ??
+        defaultRouteAliases[name.trim()];
+    if (alias != null) {
+      return routeIconUrl(alias);
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final regions = widget.regions;
+    return CommonPopScope(
+      onPop: _confirmDiscard,
+      child: AdaptiveSheetScaffold(
+        type: widget.type,
+        title: appLocalizations.regionGroups,
+        actions: [
+          IconButton(
+            onPressed: () => _handleAddOrEditCustomRegion(),
+            icon: const AppIcon(Icons.add),
+            tooltip: appLocalizations.add,
+          ),
+          if (_dirty)
+            IconButton(
+              onPressed: _handleSave,
+              icon: const AppIcon(Icons.save),
+              tooltip: appLocalizations.save,
+            ),
+        ],
+        body: ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          itemCount: regions.length + _customRegions.length + 1,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                child: Text(
+                  appLocalizations.regionGroupsTip,
+                  style: context.textTheme.labelSmall?.toLight,
+                ),
+              );
+            }
+            if (index <= regions.length) {
+              final region = regions[index - 1];
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: CommonCard(
+                  type: CommonCardType.filled,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: _RouteIcon(url: widget.icons[region.name]),
+                    title: Text(region.name),
+                    trailing: Switch(
+                      value: _enabled.contains(region.name),
+                      onChanged: (value) => setState(() {
+                        if (value) {
+                          _enabled.add(region.name);
+                        } else {
+                          _enabled.remove(region.name);
+                        }
+                        _dirty = true;
+                      }),
+                    ),
+                  ),
+                ),
+              );
+            }
+            final customIndex = index - 1 - regions.length;
+            final customRegion = _customRegions[customIndex];
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: CommonCard(
+                type: CommonCardType.filled,
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  leading: _RouteIcon(url: _customIconUrl(customRegion.name)),
+                  title: Text(customRegion.name),
+                  subtitle: Text(
+                    customRegion.regex,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.textTheme.bodySmall?.toLight,
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const AppIcon(Icons.delete_outline),
+                        onPressed: () => _handleDeleteCustomRegion(customIndex),
+                      ),
+                      Switch(
+                        value: _enabled.contains(customRegion.name),
+                        onChanged: (value) => setState(() {
+                          if (value) {
+                            _enabled.add(customRegion.name);
+                          } else {
+                            _enabled.remove(customRegion.name);
+                          }
+                          _dirty = true;
+                        }),
+                      ),
+                    ],
+                  ),
+                  onTap: () =>
+                      _handleAddOrEditCustomRegion(customRegion, customIndex),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -655,6 +1066,7 @@ class _RouteSheet extends StatefulWidget {
   final List<_Preset> presets;
   final List<CustomRoute> routes;
   final Set<String> reserved;
+  final List<String> targets;
   final ValueChanged<CustomRoute> onSave;
   final ValueChanged<_RouteChanges>? onApply;
   final VoidCallback? onReset;
@@ -667,6 +1079,7 @@ class _RouteSheet extends StatefulWidget {
     required this.presets,
     required this.routes,
     required this.reserved,
+    required this.targets,
     required this.onSave,
     this.onApply,
     this.onReset,
@@ -837,8 +1250,10 @@ class _RouteSheetState extends State<_RouteSheet> {
       return;
     }
     if (draft.sets.isEmpty) {
-      context.showNotifier(
-        appLocalizations.emptyTip(appLocalizations.ruleSets),
+      unawaited(
+        context.showNotifier(
+          appLocalizations.emptyTip(appLocalizations.ruleSets),
+        ),
       );
       return;
     }
@@ -919,17 +1334,18 @@ class _RouteSheetState extends State<_RouteSheet> {
     await showIconPicker(
       context,
       selected: icon == null || icon.isHttpUrl ? icon : routeIconUrl(icon),
+      suggest: [draft.name, ?autoIcon].join('|'),
       options: [
         IconPickerOption(
           icon: autoIcon == null || autoIcon.isEmpty
-              ? const Icon(Icons.auto_awesome_outlined, size: 28)
-              : _RouteIcon(url: routeIconUrl(autoIcon), size: 28),
+              ? const AppIcon(Icons.auto_awesome_outlined, size: 18)
+              : _RouteIcon(url: routeIconUrl(autoIcon), size: 18),
           label: appLocalizations.auto,
           selected: icon == null,
           value: null,
         ),
         IconPickerOption(
-          icon: const Icon(Icons.hide_image_outlined, size: 28),
+          icon: const AppIcon(Icons.hide_image_outlined, size: 18),
           label: appLocalizations.noIcon,
           selected: icon == '',
           value: '',
@@ -974,23 +1390,22 @@ class _RouteSheetState extends State<_RouteSheet> {
   Widget _buildMode() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: SegmentedButton<bool>(
-        segments: [
-          ButtonSegment(
+      child: SegmentButtonGroup<bool>(
+        maxWidth: 480,
+        options: [
+          SegmentOption(
             value: true,
-            label: Text(appLocalizations.auto),
-            icon: const Icon(Icons.auto_awesome),
+            label: appLocalizations.auto,
+            icon: const AppIcon(Icons.auto_awesome),
           ),
-          ButtonSegment(
+          SegmentOption(
             value: false,
-            label: Text(appLocalizations.custom),
-            icon: const Icon(Icons.tune),
+            label: appLocalizations.custom,
+            icon: const AppIcon(Icons.tune),
           ),
         ],
-        selected: {_auto},
-        showSelectedIcon: false,
-        expandedInsets: EdgeInsets.zero,
-        onSelectionChanged: (selection) => _switchMode(selection.first),
+        selected: _auto,
+        onSelected: _switchMode,
       ),
     );
   }
@@ -1127,7 +1542,7 @@ class _RouteSheetState extends State<_RouteSheet> {
   }
 
   Widget _buildAuto(BuildContext context) {
-    final targets = widget.catalog.catalog.targets;
+    final targets = widget.targets;
     final target = _target ?? targets.firstOrNull;
     final services = _services;
     final pending = _pendingOf(services);
@@ -1197,7 +1612,7 @@ class _RouteSheetState extends State<_RouteSheet> {
   Widget _buildCustom(BuildContext context) {
     final catalog = widget.catalog;
     final draft = _draft;
-    final targets = catalog.catalog.targets;
+    final targets = widget.targets;
     final target = _target ?? targets.firstOrNull;
     final icon = _icon;
     final names = {
@@ -1251,7 +1666,7 @@ class _RouteSheetState extends State<_RouteSheet> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: const Icon(Icons.chevron_right),
+                  trailing: const AppIcon(Icons.chevron_right),
                   onTap: _handlePickIcon,
                 ),
               ),
@@ -1263,7 +1678,7 @@ class _RouteSheetState extends State<_RouteSheet> {
                   for (final key in _sets)
                     InputChip(
                       avatar: switch (CustomRuleSet.parse(key)) {
-                        final custom? => Icon(
+                        final custom? => AppIcon(
                           custom.ip ? Icons.lan_outlined : Icons.link,
                           size: 18,
                         ),
@@ -1277,12 +1692,12 @@ class _RouteSheetState extends State<_RouteSheet> {
                           _change(() => _sets = List.of(_sets)..remove(key)),
                     ),
                   ActionChip(
-                    avatar: const Icon(Icons.add),
+                    avatar: const AppIcon(Icons.add),
                     label: Text(appLocalizations.addRuleSet),
                     onPressed: _handlePickSets,
                   ),
                   ActionChip(
-                    avatar: const Icon(Icons.link),
+                    avatar: const AppIcon(Icons.link),
                     label: Text(appLocalizations.customRuleSetUrl),
                     onPressed: _handleAddUrl,
                   ),
@@ -1318,18 +1733,18 @@ class _RouteSheetState extends State<_RouteSheet> {
           if (widget.onDelete != null)
             IconButton(
               onPressed: _handleDelete,
-              icon: const Icon(Icons.delete_outline),
+              icon: const AppIcon(Icons.delete_outline),
               tooltip: appLocalizations.delete,
             ),
           if (widget.onReset != null)
             IconButton(
               onPressed: _handleReset,
-              icon: const Icon(Icons.restart_alt),
+              icon: const AppIcon(Icons.restart_alt),
               tooltip: appLocalizations.reset,
             ),
           IconButton(
             onPressed: _handleSave,
-            icon: const Icon(Icons.check),
+            icon: const AppIcon(Icons.check),
             tooltip: appLocalizations.confirm,
           ),
         ],
@@ -1474,7 +1889,15 @@ class _RuleSetPickerSheetState extends State<_RuleSetPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final sets = _index.search(_query);
+    final searched = _index.search(_query);
+    final sets = _query.trim().isEmpty
+        ? [
+            for (final set in searched)
+              if (_selected.contains(set.key) ||
+                  !_sensitiveTagPattern.hasMatch(set.tag))
+                set,
+          ]
+        : searched;
     return CommonPopScope(
       onPop: _confirmDiscard,
       child: AdaptiveSheetScaffold(
@@ -1483,7 +1906,7 @@ class _RuleSetPickerSheetState extends State<_RuleSetPickerSheet> {
         actions: [
           IconButton(
             onPressed: _handleSave,
-            icon: const Icon(Icons.check),
+            icon: const AppIcon(Icons.check),
             tooltip: appLocalizations.confirm,
           ),
         ],

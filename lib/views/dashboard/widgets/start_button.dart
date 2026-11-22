@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:bett_box/common/common.dart';
 import 'package:bett_box/models/models.dart';
 import 'package:bett_box/providers/providers.dart';
@@ -9,9 +10,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:bett_box/views/profiles/add_profile.dart';
 import 'package:bett_box/enum/enum.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' show Intl;
 
 import 'tile.dart';
+import 'quick_options.dart';
 
 class StartButton extends ConsumerStatefulWidget {
   final DashboardTileSize? size;
@@ -91,13 +93,19 @@ class _StartButtonState extends ConsumerState<StartButton> {
           Mode.direct => Icons.east_rounded,
         },
         label: Intl.message(mode.name),
+        onTap: () => showOutboundModeSheet(context),
       ),
       if (system.isDesktop && tun)
-        DashboardChip(icon: Icons.vpn_lock_rounded, label: appLocalizations.tun)
+        DashboardChip(
+          icon: Icons.vpn_lock_rounded,
+          label: appLocalizations.tun,
+          onTap: () => showTunSheet(context),
+        )
       else if (system.isDesktop && systemProxy)
         DashboardChip(
           icon: Icons.settings_ethernet_rounded,
           label: appLocalizations.systemProxy,
+          onTap: () => showSystemProxySheet(context),
         ),
     ];
   }
@@ -193,8 +201,8 @@ class _StartButtonState extends ConsumerState<StartButton> {
       mark: DashboardDecor.icon(context, Icons.power_settings_new, 80),
       markBottom: !isTall,
       markAngle: isTall ? -0.08 : 0.1,
-      onPressed: isTall ? null : onPressed,
-      onLongPress: isTall ? null : onLongPress,
+      onPressed: null,
+      onLongPress: null,
       child: isTall
           ? Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 12, 14),
@@ -220,7 +228,7 @@ class _StartButtonState extends ConsumerState<StartButton> {
                             child: SizedBox.square(
                               dimension: 56,
                               child: Icon(
-                                icon,
+                                context.resolveIcon(icon),
                                 size: 30,
                                 color: colorScheme.primary,
                               ),
@@ -252,22 +260,56 @@ class _StartButtonState extends ConsumerState<StartButton> {
               ),
             )
           : Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 72, 14),
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Row(
-                  children: [
-                    Icon(icon, size: 22, color: colorScheme.primary),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: FittedBox(fit: BoxFit.scaleDown, child: status),
+              padding: const EdgeInsets.only(right: 72),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      customBorder: const _IconCapsuleBorder(),
+                      onTap: onPressed,
+                      onLongPress: onLongPress,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 14, 19),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          widthFactor: 1,
+                          child: AppIcon(
+                            icon,
+                            size: 22,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                      ),
                     ),
-                    for (final chip in chips) ...[
-                      const SizedBox(width: 8),
-                      Flexible(child: chip),
-                    ],
-                  ],
-                ),
+                  ),
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 32),
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: status,
+                                ),
+                              ),
+                              for (final chip in chips) ...[
+                                const SizedBox(width: 12),
+                                Flexible(child: chip),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
     );
@@ -345,7 +387,7 @@ class _StartButtonState extends ConsumerState<StartButton> {
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
           Icon(
-            Icons.pause_circle_outline,
+            context.resolveIcon(Icons.pause_circle_outline),
             size: 20,
             color: context.colorScheme.outline,
           ),
@@ -393,7 +435,11 @@ class _StartButtonState extends ConsumerState<StartButton> {
       return Row(
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          Icon(Icons.play_arrow, size: 16, color: context.colorScheme.primary),
+          Icon(
+            context.resolveIcon(Icons.play_arrow),
+            size: 16,
+            color: context.colorScheme.primary,
+          ),
           SizedBox(width: 4),
           Expanded(
             child: Text(
@@ -410,7 +456,11 @@ class _StartButtonState extends ConsumerState<StartButton> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.start,
       children: [
-        Icon(Icons.pause, size: 16, color: context.colorScheme.primary),
+        Icon(
+          context.resolveIcon(Icons.pause),
+          size: 16,
+          color: context.colorScheme.primary,
+        ),
         const SizedBox(width: 4),
         Text('  ', style: context.textTheme.bodyMedium?.toLight.adjustSize(1)),
         Expanded(
@@ -454,4 +504,35 @@ class _StartButtonState extends ConsumerState<StartButton> {
 
     return '$hourStr:${inMinutes.toString().padLeft(2, '0')}:${inSeconds.toString().padLeft(2, '0')}';
   }
+}
+
+class _IconCapsuleBorder extends ShapeBorder {
+  const _IconCapsuleBorder();
+
+  Path _path(Rect rect) => Path()
+    ..addRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: rect.bottomLeft + const Offset(27, -30),
+          width: 40,
+          height: 28,
+        ),
+        const Radius.circular(14),
+      ),
+    );
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) => _path(rect);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) => _path(rect);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
+
+  @override
+  ShapeBorder scale(double t) => this;
 }

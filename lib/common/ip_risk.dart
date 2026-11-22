@@ -64,9 +64,8 @@ IpRiskLevel? _levelWord(String? word) => switch (word?.trim().toLowerCase()) {
 IpRiskNote? _note(String body) {
   final panel = _panelReg.firstMatch(body)?.group(1);
   if (panel == null) return null;
-  final text = _unescape(
-    panel.replaceAll(_noteTagReg, ' '),
-  ).replaceAll(_spaceReg, ' ');
+  final text = _unescape(panel.replaceAll(_noteTagReg, ' '))
+      .replaceAll(_spaceReg, ' ');
   final indirect = _indirectReg.firstMatch(text);
   final operator = _operatorReg.firstMatch(text);
   final owner = _ownerReg.firstMatch(text);
@@ -191,7 +190,7 @@ IpRisk? parseScamalytics(String ip, String html) {
   );
   final country =
       IpInfo.normalizeCountry(info['Country Name'], countryCode, region) ?? '';
-  return IpRisk(
+  final risk = IpRisk(
     ip: ip,
     score: score.clamp(0, 100),
     level: _level(riskText, score),
@@ -211,4 +210,5 @@ IpRisk? parseScamalytics(String ip, String html) {
     ],
     note: _note(body),
   );
+  return risk.normalized;
 }

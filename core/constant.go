@@ -45,13 +45,12 @@ type InitParams struct {
 }
 
 type SetupParams struct {
-	SelectedMap     map[string]string `json:"selected-map"`
-	TestURL         string            `json:"test-url"`
-	OverrideTestUrl bool              `json:"override-test-url"`
-	ProfilePath     string            `json:"profile-path"`
-	AgeSecretKey    string            `json:"age-secret-key"`
-	ScriptedConfig  string            `json:"scripted-config"`
-	Patch           *PatchParams      `json:"patch"`
+	SelectedMap    map[string]string `json:"selected-map"`
+	TestURL        string            `json:"test-url"`
+	ProfilePath    string            `json:"profile-path"`
+	AgeSecretKey   string            `json:"age-secret-key"`
+	ScriptedConfig string            `json:"scripted-config"`
+	Patch          *PatchParams      `json:"patch"`
 }
 
 type SetupResult struct {
@@ -117,6 +116,7 @@ const (
 	shutdownMethod                       Method = "shutdown"
 	validateConfigMethod                 Method = "validateConfig"
 	importProfileMethod                  Method = "importProfile"
+	downloadProfileMethod                Method = "downloadProfile"
 	decryptAgeConfigMethod               Method = "decryptAgeConfig"
 	updateConfigMethod                   Method = "updateConfig"
 	getProxiesMethod                     Method = "getProxies"
@@ -133,6 +133,8 @@ const (
 	resetConnectionsMethod               Method = "resetConnectionsMethod"
 	closeConnectionMethod                Method = "closeConnection"
 	closeGroupConnectionsMethod          Method = "closeGroupConnections"
+	getDialerDependentsMethod            Method = "getDialerDependents"
+	checkDialerUDPMethod                 Method = "checkDialerUdp"
 	getExternalProvidersMethod           Method = "getExternalProviders"
 	getExternalProviderMethod            Method = "getExternalProvider"
 	getCountryCodeMethod                 Method = "getCountryCode"
@@ -153,6 +155,8 @@ const (
 	setupConfigMethod                    Method = "setupConfig"
 	getConfigMethod                      Method = "getConfig"
 	getRuntimeConfigMethod               Method = "getRuntimeConfig"
+	getProxyConfigMethod                 Method = "getProxyConfig"
+	updateExpandedProviderMethod         Method = "updateExpandedProvider"
 	exportConfigMethod                   Method = "exportConfig"
 	mergeProfilesMethod                  Method = "mergeProfiles"
 	flushFakeIPMethod                    Method = "flushFakeIP"
@@ -190,6 +194,9 @@ const (
 	storeGetMethod                       Method = "storeGet"
 	storeSetMethod                       Method = "storeSet"
 	storeListMethod                      Method = "storeList"
+	parseNodesMethod                     Method = "parseNodes"
+	registerWarpMethod                   Method = "registerWarp"
+	testNodeMethod                       Method = "testNode"
 	storeClearMethod                     Method = "storeClear"
 	cancelMrsLookupMethod                Method = "cancelMrsLookup"
 	startToolProxyMethod                 Method = "startToolProxy"

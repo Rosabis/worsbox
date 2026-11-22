@@ -109,10 +109,11 @@ class _TrafficUsageState extends ConsumerState<TrafficUsage> {
           ),
         ),
         const SizedBox(width: 8),
-        Flexible(
+        Expanded(
           child: Text(
             v,
             maxLines: 1,
+            textAlign: TextAlign.end,
             overflow: TextOverflow.ellipsis,
             style: context.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w600,
@@ -338,13 +339,21 @@ class _TrafficUsageState extends ConsumerState<TrafficUsage> {
                   ),
                   _buildTrafficDataItem(
                     context,
-                    Icon(Icons.arrow_upward, color: primaryColor, size: 14),
+                    Icon(
+                      context.resolveIcon(Icons.arrow_upward),
+                      color: primaryColor,
+                      size: 14,
+                    ),
                     upTotalTrafficValue,
                   ),
                   const SizedBox(height: 8),
                   _buildTrafficDataItem(
                     context,
-                    Icon(Icons.arrow_downward, color: secondaryColor, size: 14),
+                    Icon(
+                      context.resolveIcon(Icons.arrow_downward),
+                      color: secondaryColor,
+                      size: 14,
+                    ),
                     downTotalTrafficValue,
                   ),
                 ],

@@ -28,6 +28,8 @@ import (
 	"github.com/metacubex/mihomo/common/utils"
 	"github.com/metacubex/mihomo/common/yaml"
 	"github.com/metacubex/mihomo/component/age"
+	"github.com/metacubex/mihomo/component/geodata"
+	"github.com/metacubex/mihomo/component/iface"
 	"github.com/metacubex/mihomo/component/mmdb"
 	"github.com/metacubex/mihomo/component/resolver"
 	"github.com/metacubex/mihomo/component/updater"
@@ -492,11 +494,92 @@ func closeConnections() {
 	})
 }
 
+func resolvesThrough(name, target string) bool {
+	seen := map[string]bool{}
+	for name != "" && !seen[name] {
+		if name == target {
+			return true
+		}
+		seen[name] = true
+		proxy, ok := toolbox.FindProxy(name)
+		if !ok {
+			return false
+		}
+		if _, group, ok := proxyGroupOf(proxy); ok {
+			name = group.Now()
+			continue
+		}
+		name = proxy.ProxyInfo().DialerProxy
+	}
+	return false
+}
+
+func dialerSupportsUDP(name string) bool {
+	seen := map[string]bool{}
+	for name != "" && !seen[name] {
+		seen[name] = true
+		proxy, ok := toolbox.FindProxy(name)
+		if !ok {
+			return true
+		}
+		if _, group, ok := proxyGroupOf(proxy); ok {
+			name = group.Now()
+			continue
+		}
+		if !proxy.SupportUDP() {
+			return false
+		}
+		name = proxy.ProxyInfo().DialerProxy
+	}
+	return true
+}
+
+func handleCheckDialerUDP(name string) bool {
+	runLock.Lock()
+	defer runLock.Unlock()
+	return dialerSupportsUDP(name)
+}
+
+func dialerDependents(groupName string) []string {
+	seen := map[string]bool{}
+	names := make([]string, 0)
+	visit := func(proxy constant.Proxy) {
+		name := proxy.Name()
+		if seen[name] {
+			return
+		}
+		seen[name] = true
+		if _, _, ok := proxyGroupOf(proxy); ok {
+			return
+		}
+		if dialer := proxy.ProxyInfo().DialerProxy; dialer != "" && resolvesThrough(dialer, groupName) {
+			names = append(names, name)
+		}
+	}
+	for _, proxy := range tunnel.Proxies() {
+		visit(proxy)
+	}
+	for _, provider := range tunnel.Providers() {
+		for _, proxy := range provider.Proxies() {
+			visit(proxy)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+func handleGetDialerDependents(groupName string) []string {
+	runLock.Lock()
+	defer runLock.Unlock()
+	return dialerDependents(groupName)
+}
+
 func handleCloseGroupConnections(groupName string) bool {
 	runLock.Lock()
 	defer runLock.Unlock()
+	targets := append(dialerDependents(groupName), groupName)
 	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
-		if slices.Contains(c.Info().Chain, groupName) {
+		if slices.ContainsFunc(c.Info().Chain, func(name string) bool { return slices.Contains(targets, name) }) {
 			_ = c.Close()
 		}
 		return true
@@ -587,6 +670,7 @@ func handleUpdateGeoData(geoType string, geoName string, fn func(value string)) 
 				fn(err.Error())
 				return
 			}
+			geodata.ClearGeoSiteCache()
 		}
 		fn("")
 	}()
@@ -784,6 +868,47 @@ func handleGetMemory(fn func(value string)) {
 		mem := m.HeapInuse + retainedIdle + m.StackInuse
 		fn(strconv.FormatUint(mem, 10))
 	}()
+}
+
+type interfaceInfo struct {
+	Name      string   `json:"name"`
+	Addresses []string `json:"addresses"`
+}
+
+func handleGetInterfaces() string {
+	iface.FlushCache()
+	ifaces, err := iface.Interfaces()
+	if err != nil {
+		return "[]"
+	}
+	tunDevice := ""
+	if currentConfig != nil {
+		tunDevice = currentConfig.General.Tun.Device
+	}
+	result := make([]interfaceInfo, 0, len(ifaces))
+	for name, item := range ifaces {
+		if name == tunDevice ||
+			item.Flags&net.FlagUp == 0 ||
+			item.Flags&(net.FlagLoopback|net.FlagPointToPoint) != 0 {
+			continue
+		}
+		addresses := make([]string, 0, len(item.Addresses))
+		for _, prefix := range item.Addresses {
+			if addr := prefix.Addr(); addr.IsGlobalUnicast() || addr.IsPrivate() {
+				addresses = append(addresses, addr.String())
+			}
+		}
+		if len(addresses) == 0 {
+			continue
+		}
+		result = append(result, interfaceInfo{Name: name, Addresses: addresses})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	data, err := json.Marshal(result)
+	if err != nil {
+		return "[]"
+	}
+	return string(data)
 }
 
 func handleGetCoreStatus(fn func(value string)) {
